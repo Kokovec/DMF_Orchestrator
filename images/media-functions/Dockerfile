@@ -4,7 +4,8 @@
 #
 #   target "switchframe" : SwitchFrame vision mixer built with -tags "embed_ui cgo mxl"
 #                          (the upstream Dockerfile has no MXL support).
-#   target "mxl-tools"   : MXL SDK tools (mxl-gst-testsrc, mxl-gst-sink, mxl-info)
+#   target "mxl-tools"   : MXL SDK tools (mxl-gst-testsrc, mxl-gst-looping-filesrc, mxl-info),
+#                          the mxl-syncgen A/V sync source,
 #                          plus the mxl-flow-agent (NMOS IS-04 registration and flow metrics).
 #
 # Build (make images does this):
@@ -103,6 +104,14 @@ RUN mkdir -p /out/lib \
        | xargs -r cp -Lnt /out/lib/
 
 # ----------------------------------------------------------------------------
+# mxl-syncgen: A/V sync test source (flash + beep locked to the MXL index)
+# ----------------------------------------------------------------------------
+FROM mxl-sdk AS mxl-syncgen
+COPY mxl-syncgen/mxl-syncgen.c /src/mxl-syncgen/
+RUN mkdir -p /out \
+    && gcc -O2 -Wall -Werror -I/opt/mxl/include -o /out/mxl-syncgen /src/mxl-syncgen/mxl-syncgen.c -L/opt/mxl/lib -lmxl -lm
+
+# ----------------------------------------------------------------------------
 # Runtime: SwitchFrame Media Function
 # ----------------------------------------------------------------------------
 FROM ${BASE_IMAGE} AS switchframe
@@ -135,12 +144,18 @@ LABEL org.opencontainers.image.title="mxl-tools" \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates python3 librdmacm1 fonts-dejavu-core \
         gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-x \
+        gstreamer1.0-plugins-bad gstreamer1.0-libav \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=switchframe-build /out/lib/ /usr/local/lib/dmf/
 RUN echo /usr/local/lib/dmf > /etc/ld.so.conf.d/dmf.conf && ldconfig
 # Pods run with a read-only root filesystem; /tmp is an emptyDir.
 ENV HOME=/tmp GST_REGISTRY=/tmp/gstreamer-registry.bin
 COPY --from=mxl-sdk /opt/mxl/bin/ /usr/local/bin/
+COPY --from=mxl-syncgen /out/mxl-syncgen /usr/local/bin/mxl-syncgen
+# mxl-gst-looping-filesrc needs MXL's own GStreamer element (looping_filesrc)
+# plus the TS demuxer and H.264/AAC decoders above.
+COPY --from=mxl-sdk /opt/mxl/lib/gstreamer-1.0/ /usr/local/lib/dmf/gstreamer-1.0/
+ENV GST_PLUGIN_PATH=/usr/local/lib/dmf/gstreamer-1.0
 COPY mxl-flow-agent/agent.py /usr/local/bin/mxl-flow-agent
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/mxl-gst-testsrc"]

@@ -7,3 +7,4 @@
 terraform.tfstate.d/
 __pycache__/
 *.pyc
+ansible/.ansible/

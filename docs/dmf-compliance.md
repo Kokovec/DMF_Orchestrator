@@ -77,7 +77,7 @@ Status key: **Met**: implemented as the RA describes. **Partial**: implemented w
 
 | RA item | Implementation | Status |
 |---|---|---|
-| Well-defined units acting on media | Input functions (`mxl-gst-testsrc` per camera) and a processing function (SwitchFrame vision mixer + audio mixer) | Met |
+| Well-defined units acting on media | Input functions (`mxl-gst-testsrc` per camera, `mxl-syncgen` as an A/V sync source) and a processing function (SwitchFrame vision mixer + audio mixer) | Met |
 | Stateless | SwitchFrame keeps presets, macros, operators and SCTE-35 rules on disk. They live on a PVC and are archived at FINALISE | Partial |
 | Fine-grained functions | SwitchFrame bundles vision mixing, audio, keying, graphics, replay and encode in one process | Partial |
 | External interfaces: ST 2110 / SRT / etc. | SRT listener (UDP `srtPort`). SwitchFrame's ST 2110/DPDK path is not enabled (needs DPDK NICs) | Partial |
@@ -113,7 +113,9 @@ Status key: **Met**: implemented as the RA describes. **Partial**: implemented w
 2. **East-west traffic is unencrypted inside the cluster.** It is confined by NetworkPolicy. A service mesh with mTLS (Linkerd, or Istio ambient) is the upgrade path.
 3. **The NMOS registry has no IS-10 authorisation.** Only `mxl-flow-agent` pods may reach it (NetworkPolicy).
 4. **Keycloak uses its `dev-file` database.** That is fine for one local facility. Use PostgreSQL (and two replicas) for anything shared.
-5. **No image signing or SBOM.** Images build from pinned sources, but EBU R 160 vulnerability management would add scanning (e.g. Trivy) and signing (cosign).
+5. **SwitchFrame's MXL readers don't recover when a flow's writer restarts.** After 50 consecutive `flow invalid` errors a reader stops for good. If an input Media Function (camera) restarts, that source stays dead until SwitchFrame is restarted (`kubectl -n wl-<name> rollout restart deploy/<mixer>`, then `make provision` to restore programme and labels). This is upstream behaviour; a reconnect loop in `server/mxl/reader.go` is the fix.
+6. **SwitchFrame's MXL programme output drops and repeats frames.** Its writer (`server/mxl/writer.go`, `videoTickLoop`) runs its own free-running 29.97 Hz ticker and writes the newest frame at the grain index current at tick time, unaligned with the mixer and with grain boundaries. Measured with the `sync` source: 19 to 22 of 30 one-frame flashes reach the MXL programme flow. The browser programme feed is not affected (it is encoded before this writer). The fix upstream is to write each mixer output frame once, at an index derived from its own timestamp.
+7. **No image signing or SBOM.** Images build from pinned sources, but EBU R 160 vulnerability management would add scanning (e.g. Trivy) and signing (cosign).
 
 ## 5. Open topics the RA itself defers
 

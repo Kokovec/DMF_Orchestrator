@@ -31,7 +31,7 @@
     ns: "wl-{{ workload }}"
     kubectl: "kubectl --kubeconfig {{ dmf_kubeconfig }} -n wl-{{ workload }}"
     expected_flows: >-
-      {{ (dmf_workload.spec.functions | selectattr('kind', 'equalto', 'mxl-testsrc') | list | length) * 2
+      {{ (dmf_workload.spec.functions | selectattr('kind', 'in', ['mxl-testsrc', 'mxl-syncsrc']) | list | length) * 2
          + (2 if (dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first).programOutput | default(true) else 0) }}
   tasks:
     - name: Resolve facility hostnames on the control node
@@ -139,7 +139,7 @@
         # "mxl:<video flow uuid>=<label>", flow ids derived exactly as in Terraform.
         label_args: >-
           {%- set out = [] -%}
-          {%- for f in dmf_workload.spec.functions if f.kind == 'mxl-testsrc' -%}
+          {%- for f in dmf_workload.spec.functions if f.kind in ['mxl-testsrc', 'mxl-syncsrc'] -%}
           {%- set _ = out.append('mxl:' ~ (('dmf://' ~ workload ~ '/' ~ f.name ~ '/video')
                 | to_uuid(namespace='6ba7b811-9dad-11d1-80b4-00c04fd430c8')) ~ '=' ~ (f.label | default(f.name))) -%}
           {%- endfor -%}

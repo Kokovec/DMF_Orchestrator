@@ -59,11 +59,17 @@ spec:
       kind: mxl-testsrc
       pattern: ball
       label: "Camera 2"
+    - name: sync
+      kind: mxl-syncsrc          # A/V sync test clip: white flash + 1 kHz beep every 30 frames
+      label: "Sync test"
     - name: vision-mixer
       kind: switchframe          # Processing Media Function (switching, audio mix, keying, graphics)
       format: 1080p29.97
-      sources: [cam1, cam2]      # initial connections, made during CONFIGURE
+      sources: [cam1, cam2, sync] # initial connections, made during CONFIGURE
       programOutput: true        # writes program V210 + float32 audio back to the domain
+      # No --frame-sync: MXL sources are already locked to the facility clock
+      # (TAI grain indexes), and SwitchFrame's newest-wins frame synchronizer
+      # drops and repeats frames whenever a source's grains arrive near its
+      # tick (measured: 40% of single-frame flashes lost on programme).
       extraArgs:
         - --preview-proxy
-        - --frame-sync

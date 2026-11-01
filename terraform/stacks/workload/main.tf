@@ -23,8 +23,12 @@ locals {
   }
 
   functions = { for f in local.spec.functions : f.name => f }
-  sources   = { for k, f in local.functions : k => f if f.kind == "mxl-testsrc" }
-  mixers    = { for k, f in local.functions : k => f if f.kind == "switchframe" }
+  # Input Media Functions: mxl-testsrc (GStreamer test pattern + tone) and
+  # mxl-syncsrc (mxl-syncgen: white frame + 1 kHz beep every 30 frames, both
+  # derived from the MXL index, so they are aligned by construction).
+  input_kinds = ["mxl-testsrc", "mxl-syncsrc"]
+  sources     = { for k, f in local.functions : k => f if contains(local.input_kinds, f.kind) }
+  mixers      = { for k, f in local.functions : k => f if f.kind == "switchframe" }
   # Null-safe so the namespace preconditions can report a bad design clearly.
   mixer_key = length(local.mixers) == 1 ? keys(local.mixers)[0] : "invalid"
   mixer     = try(local.mixers[local.mixer_key], { format = "1080p29.97", sources = [] })
@@ -125,7 +129,11 @@ resource "kubernetes_namespace_v1" "workload" {
     }
     precondition {
       condition     = alltrue([for s in local.mixer.sources : contains(keys(local.sources), s)])
-      error_message = "vision-mixer sources must name functions of kind mxl-testsrc in this workload."
+      error_message = "vision-mixer sources must name input functions (mxl-testsrc, mxl-syncsrc) in this workload."
+    }
+    precondition {
+      condition     = length([for k, f in local.sources : k if f.kind == "mxl-syncsrc"]) == 0 || local.mixer.format == "1080p29.97"
+      error_message = "mxl-syncsrc generates 1080p29.97 only (30-frame / 48048-sample period); use it in 1080p29.97 workloads."
     }
   }
 }
@@ -289,15 +297,11 @@ resource "helm_release" "source" {
   values = [yamlencode(merge(local.common_function_values, {
     chartHash = local.chart_hash["mxl-function"]
     role      = "input"
-    command   = ["/usr/local/bin/mxl-gst-testsrc"]
-    args = [
-      "-d", local.domain_path,
-      "-v", "/etc/mxl/flows/video.json",
-      "-a", "/etc/mxl/flows/audio.json",
-      "-p", try(each.value.pattern, "smpte"),
-      "-t", try(each.value.label, each.key),
-      "-g", each.key,
-    ]
+    command   = each.value.kind == "mxl-syncsrc" ? ["/usr/local/bin/mxl-syncgen"] : ["/usr/local/bin/mxl-gst-testsrc"]
+    args = concat(
+      ["-d", local.domain_path, "-v", "/etc/mxl/flows/video.json", "-a", "/etc/mxl/flows/audio.json"],
+      each.value.kind == "mxl-testsrc" ? ["-p", try(each.value.pattern, "smpte"), "-t", try(each.value.label, each.key), "-g", each.key] : [],
+    )
     flowDefs = { "video.json" = local.video_flow[each.key], "audio.json" = local.audio_flow[each.key] }
     resources = try(each.value.resources, {
       requests = { cpu = "250m", memory = "256Mi" }

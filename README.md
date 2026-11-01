@@ -87,7 +87,7 @@ A production is one file in `workloads/`. Copy [workloads/news-studio.yaml](work
 | `spec.resourceProfile` | CPU, memory and GPU reserved by ResourceQuota; checked at PLAN |
 | `spec.mediaExchange` | Flow Domain name, **unique** uid/gid, and tmpfs size |
 | `spec.access` | Hostname, QUIC and SRT ports (unique per facility), Keycloak members per role |
-| `spec.functions` | `mxl-testsrc` inputs and exactly one `switchframe`, with `sources` (initial connections), `format` and `extraArgs` |
+| `spec.functions` | `mxl-testsrc` (test pattern + tone) and `mxl-syncsrc` (A/V sync source: flash + beep every 1.001 s, 1080p29.97 only) inputs, and exactly one `switchframe`, with `sources` (initial connections), `format` and `extraArgs` |
 
 Several workloads can run side by side. They are isolated by namespace, network policy, Flow Domain ownership and the admission policy.
 
