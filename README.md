@@ -11,25 +11,139 @@ A deployment package that runs [SwitchFrame](https://github.com/thiagopnts/switc
 
 See [docs/architecture.md](docs/architecture.md) for the layer mapping and [docs/dmf-compliance.md](docs/dmf-compliance.md) for an item-by-item compliance matrix, including what is only partially met.
 
-## Quick start (this machine, e.g. WSL2 Ubuntu 24.04)
+## Set up from scratch
 
-Requirements: Ubuntu 24.04 with systemd, Docker (for image builds), sudo, Python 3, 8 cores / 16 GB RAM, and about 30 GB of disk.
+This builds the whole facility on one machine: the DMF environment first, then a production with SwitchFrame in it. You don't install SwitchFrame separately. It is compiled from a pinned upstream commit, with MXL support, when you build the images.
+
+Two things are called a "domain" here:
+
+- The **facility domain** is the DNS suffix of the web interfaces (`dmf.test`). Step 3 sets it.
+- A **Flow Domain** is the shared memory one production uses to exchange media (MXL). Step 4 creates it, from `spec.mediaExchange` in the workload file.
+
+### 1. Prepare the machine
+
+You need:
+
+| | Minimum | Recommended |
+|---|---|---|
+| OS | Ubuntu 24.04 with systemd, x86-64 (native or WSL2) | |
+| CPU | 8 cores | 16 cores. At 8 vCPUs under load, Chrome inside WSL could not decode audio in time |
+| Memory | 16 GB | 20 GB or more |
+| Free disk | 100 GB | Images and build cache take about 75 GB, plus volumes |
+
+You also need sudo, `git`, `make`, `curl`, `python3` and internet access. Docker is needed to build the images:
 
 ```bash
-make prereqs                      # terraform, kubectl, helm, ansible → ./.tools (no sudo)
-make infra                        # Infrastructure: records this host in .state/inventory.yml
-make hosts                        # Host + Container Platform: hardening, timing, MXL root, k3s   (sudo)
-make images                       # build + load Media Function images (first build: 30–60 min)
-make platform                     # PKI, monitoring, Keycloak, NMOS registry, guardrails
-make trust-ca                     # shows how to trust .state/dmf-root-ca.crt in your browser
-make plan      WORKLOAD=news-studio
-make provision WORKLOAD=news-studio
-make secrets                      # demo operator passwords (realm "dmf")
+sudo apt-get update && sudo apt-get install -y git make curl python3
+curl -fsSL https://get.docker.com | sudo sh     # or see docs.docker.com/engine/install/ubuntu
+sudo usermod -aG docker "$USER"                 # then open a new shell
 ```
 
-Then open **https://news-studio.dmf.test/sso/login** and sign in as `director1`. Grafana is at https://grafana.dmf.test (dashboard **DMF / Media Workloads**).
+**On Windows with WSL2,** do this first:
 
-Facility hostnames live under `dmf.test`, which is reserved and never resolves on the internet. Ansible maps them to the ingress in `/etc/hosts`. Don't switch to `*.localhost`: browsers resolve those to `[::1]` first, and WebTransport, unlike ordinary HTTPS, does not fall back to `127.0.0.1`, so live video would silently never connect.
+1. In PowerShell, install Ubuntu if you don't have it: `wsl --install -d Ubuntu-24.04`.
+2. Give WSL enough resources in `C:\Users\<you>\.wslconfig`:
+   ```ini
+   [wsl2]
+   processors=16
+   memory=20GB
+   ```
+3. Inside Ubuntu, make sure `/etc/wsl.conf` enables systemd:
+   ```ini
+   [boot]
+   systemd=true
+   ```
+4. Apply both from PowerShell with `wsl --shutdown`, then reopen Ubuntu.
+5. Install **Google Chrome on Windows**. It is the recommended way to view the UI.
+
+Later steps run a check for a known WSL DNS problem. If it stops you, it prints the fix.
+
+### 2. Get the code and tools
+
+```bash
+git clone <repository URL> switchframe-dmf
+cd switchframe-dmf
+make prereqs                      # terraform, kubectl, helm, ansible into ./.tools (no sudo)
+```
+
+Everything goes into `./.tools`; nothing is installed system-wide. Run all later commands from this directory. Commands marked `(sudo)` below ask for your sudo password.
+
+### 3. Build the DMF environment
+
+Run these once, in order. Each one is a layer of the DMF reference architecture, and it is safe to re-run if one fails.
+
+```bash
+make infra                        # Infrastructure: records this host in .state/inventory.yml
+make hosts                        # Host + Container Platform: OS settings, timing, MXL, k3s   (sudo)
+make images                       # Media Functions: compile SwitchFrame and MXL; load them    (sudo)
+make platform                     # Shared services: PKI, monitoring, Keycloak, NMOS registry  (sudo)
+```
+
+The first `make images` compiles the MXL SDK and its dependencies and takes 30–60 minutes.
+
+**To use a different facility domain,** set it before `make infra`, and use the same suffix for `spec.access.hostname` in your workload file:
+
+```bash
+TF_VAR_base_domain=studio.test make infra
+```
+
+Keep it a name you control or a reserved one such as `.test`. Ansible maps the hostnames to the ingress in `/etc/hosts`, so no DNS server is needed. Don't use `*.localhost`: browsers resolve those to `[::1]` first, and WebTransport does not fall back to `127.0.0.1` the way HTTPS does, so live video would silently never connect.
+
+### 4. Create a production with SwitchFrame
+
+A production is one file in `workloads/`. The included `news-studio` has two test cameras, an A/V sync test source and a SwitchFrame vision mixer.
+
+```bash
+make plan      WORKLOAD=news-studio   # check the design and capacity, show what will change
+make provision WORKLOAD=news-studio   # create the Flow Domain and start the Media Functions (sudo)
+make secrets                          # print the generated passwords
+```
+
+`make secrets` shows sensitive values, so keep its output private.
+
+### 5. Open it
+
+On WSL, close any earlier DMF Chrome window, then run:
+
+```bash
+make windows-browser WORKLOAD=news-studio
+```
+
+The first time, Windows asks you to confirm trusting the facility's root certificate. On other machines, or for a browser inside WSL, run `make trust-ca`, or see [Viewing it](#viewing-it-wsl2), then open **https://news-studio.dmf.test/sso/login**.
+
+Sign in as `director1` with the password from `make secrets`.
+
+### 6. Check that it works
+
+1. The top bar shows **LIVE**, and Camera 1 is on programme.
+2. Click once anywhere in the page to enable sound, with your volume **low**: the test cameras send loud tones.
+3. Cut to **Sync test**: a white flash and a beep every second, together.
+4. Run `make status WORKLOAD=news-studio` and `make nmos-query` to see the pods, reservation usage and registered flows.
+
+Grafana is at https://grafana.dmf.test (dashboard **DMF / Media Workloads**).
+
+`make up WORKLOAD=news-studio` runs steps 3 and 4 up to `provision` in one go.
+
+### Day to day
+
+```bash
+make start WORKLOAD=news-studio    # start the facility, wait until on air, open Chrome
+make stop                          # stop it and free its memory
+make finalise WORKLOAD=news-studio # production over: archive to .state/archive/, tear down, free the Flow Domain
+```
+
+On WSL the facility does not start with WSL, so run `make start` after each WSL restart. After `make hosts` it is already running. `make start NO_BROWSER=1` skips opening Chrome.
+
+### If something goes wrong
+
+| Symptom | Cause and fix |
+|---|---|
+| `dial tcp [2600:...]: connect: cannot assign requested address` | WSL DNS with IPv6 disabled. Follow the fix `make` prints |
+| UI shows **POLLING**, no video | WebTransport isn't connected. Check that UDP `quicPort` is reachable and that you used `make windows-browser` after any WSL IP change |
+| Page says LIVE but sources show STALL | The tab outlived a SwitchFrame restart. Reload it |
+| `make start` times out | Run `make stop`, then `make start`. If it persists: `journalctl -u k3s -n 50` |
+| Scratchy audio | Usually too little CPU. See [Viewing it](#viewing-it-wsl2) |
+| No sound | Click in the page once. BARS and BLACK on programme are silent |
 
 ### Viewing it (WSL2)
 
@@ -51,14 +165,6 @@ Click once anywhere in the UI to enable sound (browser autoplay policy). You hea
 **Scratchy or broken-up audio means the browser can't decode audio in time**, usually because the machine is out of CPU. The UI decodes every source in software. Measured on an 8-vCPU WSL VM at load 14: Chrome's AAC decoders received 47 frames/s and produced about 30 frames/s, so playback starved about 40% of the time. Give WSL more processors (`processors=` in `.wslconfig`), keep only one SwitchFrame tab open, and keep the tab in the foreground (Chrome throttles background tabs).
 
 The top bar shows **LIVE** when WebTransport is connected. **POLLING** means the UI fell back to REST: you get state and controls, but no video.
-
-When the production is over:
-
-```bash
-make finalise WORKLOAD=news-studio   # archive to .state/archive/, tear down, free the Flow Domain
-```
-
-`make up WORKLOAD=news-studio` runs everything from `infra` through `provision`.
 
 ### WSL2 notes
 
