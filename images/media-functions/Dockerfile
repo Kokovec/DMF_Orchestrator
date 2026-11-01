@@ -78,10 +78,19 @@ COPY --from=ui /src/switchframe /src/switchframe
 # Upstream fix needed for -tags mxl at the pinned commit (see the script header).
 COPY patches/ /patches/
 RUN sh /patches/mxl-split-10bit-asm.sh /src/switchframe/server
+# MXL inputs reopen their flows after the writing Media Function restarts.
+RUN sh /patches/mxl-reader-reopen.sh /src/switchframe/server
+# The MXL programme writer writes each grain once, phase-aligned to frame
+# arrivals, instead of from a free-running ticker (drops/repeats frames).
+RUN python3 /patches/mxl-writer-phase.py /src/switchframe/server
+# Fixed, short mixer input latency (narrow drift band, fast resync when far
+# above target) instead of anywhere in 1-3 frames plus minutes-long drains.
+RUN python3 /patches/mixer-audio-latency.py /src/switchframe/server
 RUN rm -f /src/switchframe/server/cmd/switchframe/ui \
     && cp -r /src/switchframe/ui/build /src/switchframe/server/cmd/switchframe/ui
 WORKDIR /src/switchframe/server
-RUN go mod download
+RUN go mod download \
+    && go test -count=1 ./mxl/ ./audio/
 # Prism (MoQ distribution) rounds audio timestamps to 11.1 ms, which makes
 # browser audio crackle; build against a patched copy (see the script header).
 RUN PRISM_DIR=$(go list -m -f '{{.Dir}}' github.com/zsiec/prism) \

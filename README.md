@@ -121,6 +121,11 @@ A second fix is applied to Prism, the MoQ distribution library SwitchFrame uses.
 
 A third fix targets SwitchFrame's browser audio player. [`patches/ui-audio-jitterbuffer.mjs`](images/media-functions/patches/ui-audio-jitterbuffer.mjs) changes how it buffers. As shipped, the player starts at 50 ms of buffered audio and resumes on the very next frame after running dry, so on any delivery hiccup it toggles between sound and silence every few milliseconds, which you hear as crackle (measured: about 2 underruns per second, 15% silence). The patch makes it (re)start only once 150 ms is buffered and widens its correction band (low/high/flush: 75/300/600 ms). It adds about 50 ms of monitoring latency.
 
+Three more patches fix timing defects found with the `sync` source (`mxl-syncsrc`, a flash and beep locked to the MXL index); each fails the build if upstream code changed and runs upstream's tests during the build:
+- [`mxl-reader-reopen.sh`](images/media-functions/patches/mxl-reader-reopen.sh): MXL inputs reopen their flow when the writing Media Function restarts. Upstream readers stopped for good, leaving the source black until SwitchFrame was restarted.
+- [`mxl-writer-phase.py`](images/media-functions/patches/mxl-writer-phase.py): the MXL programme writer writes each grain once, half a frame after frames typically arrive, instead of from a free-running ticker that dropped and repeated frames.
+- [`mixer-audio-latency.py`](images/media-functions/patches/mixer-audio-latency.py): the audio mixer holds a fixed, short per-source buffer (narrow drift band; immediate resync after start-up, reconnects and cuts, where it used to drain at 1 ms/s for minutes). Programme audio is timestamped with the time it entered the mixer, in MXL and in the browser stream. MXL programme A/V: +22 ms steady, was 66–195 ms.
+
 ### Add-ons written for this package
 
 - **`mxl-flow-agent`** ([source](images/media-functions/mxl-flow-agent/agent.py)) registers every MXL flow in a domain with an NMOS IS-04 v1.3 registry and exports per-flow Prometheus metrics: active, throughput and latency. It uses only the Python standard library.
