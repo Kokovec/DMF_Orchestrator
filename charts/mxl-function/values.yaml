@@ -3,6 +3,8 @@ workload: ""
 # -- Role of this function, used as a label: input | processing | output | agent
 role: input
 
+imageId: ""               # rolls the pod when a rebuilt image is loaded under the same tag
+
 image:
   repository: dmf.local/mxl-tools
   tag: ""                 # defaults to .Chart.AppVersion

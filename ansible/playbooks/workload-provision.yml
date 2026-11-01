@@ -55,6 +55,7 @@
           kubeconfig: "{{ dmf_kubeconfig }}"
           charts_dir: "{{ dmf_repo_root }}/charts"
           image_tag: "{{ dmf_image_tag }}"
+          image_ids_file: "{{ dmf_state_dir }}/image-ids.json"
       register: applied
 
     - name: Restart Media Functions that started before their Flow Domain existed
@@ -69,13 +70,12 @@
       ansible.builtin.command: "{{ kubectl }} rollout status deploy --timeout=600s"
       changed_when: false
 
-    # SwitchFrame publishes programme video only once a source is on programme.
-    # Put the first configured source on air, but only if programme is empty,
-    # so re-running PROVISION never cuts a live production.
-    - name: CONFIGURE - initial programme connection
+    # The mixer pod restores programme and source labels itself on every start
+    # (postStart in charts/switchframe), including restarts PROVISION never sees.
+    # SwitchFrame publishes programme flows only with a source on air.
+    - name: CONFIGURE check - programme on air
       vars:
         mixer: "{{ dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first }}"
-        first_source: "{{ 'mxl:' ~ ('dmf://' ~ workload ~ '/' ~ mixer.sources[0] ~ '/video') | to_uuid(namespace='6ba7b811-9dad-11d1-80b4-00c04fd430c8') }}"
       ansible.builtin.command:
         argv:
           - kubectl
@@ -88,70 +88,12 @@
           - sh
           - -c
           - |
-            src="$1"
-            auth="Authorization: Bearer $SWITCHFRAME_API_TOKEN"
-            api=http://127.0.0.1:8081/api
-            if curl -sf -H "$auth" "$api/switch/state" | grep -q '"programSource":"[^"]'; then echo on-air; exit 0; fi
-            # Once operators exist SwitchFrame only accepts commands from an
-            # identified operator ("operator not identified" for the session
-            # token). Act as a short-lived, named automation operator, which
-            # also attributes the change in SwitchFrame (accounting).
-            resp=$(curl -sf -X POST -H "$auth" -H 'Content-Type: application/json' \
-              -d "{\"name\":\"dmf-automation-$(date +%s)\",\"role\":\"director\"}" "$api/operator/register") \
-              || { echo "register failed"; exit 1; }
-            tok=$(printf '%s' "$resp" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-            id=$(printf '%s' "$resp" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
-            out=$(curl -s -w ' HTTP%{http_code}' -X POST -H "Authorization: Bearer $tok" \
-              -H 'Content-Type: application/json' -d "{\"source\":\"$src\"}" "$api/switch/cut")
-            curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $tok" "$api/operator/$id"
-            case "$out" in *HTTP200) echo cut ;; *) echo "cut failed: $out"; exit 1 ;; esac
-          - initial-cut
-          - "{{ first_source }}"
-      register: initial_cut
-      changed_when: initial_cut.stdout == 'cut'
+            curl -sf -H "Authorization: Bearer $SWITCHFRAME_API_TOKEN" http://127.0.0.1:8081/api/switch/state | grep -q '"programSource":"[^"]'
+      register: on_air
+      changed_when: false
       retries: 12
       delay: 5
-      until: initial_cut.rc == 0
-
-    # Name sources after the workload design ("Camera 1"), instead of the raw
-    # MXL flow id SwitchFrame shows by default. Idempotent.
-    - name: CONFIGURE - source labels from the workload design
-      vars:
-        mixer: "{{ dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first }}"
-        label_script: |
-          auth="Authorization: Bearer $SWITCHFRAME_API_TOKEN"
-          api=http://127.0.0.1:8081/api
-          # Commands need an identified operator once operators exist (see initial cut).
-          resp=$(curl -sf -X POST -H "$auth" -H 'Content-Type: application/json' \
-            -d "{\"name\":\"dmf-automation-$(date +%s)\",\"role\":\"director\"}" "$api/operator/register") \
-            || { echo "register failed"; exit 1; }
-          tok=$(printf '%s' "$resp" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-          id=$(printf '%s' "$resp" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
-          rc=0
-          for kv in "$@"; do
-            key=${kv%%=*}; label=${kv#*=}
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $tok" \
-              -H 'Content-Type: application/json' -d "{\"label\":\"$label\"}" "$api/sources/$key/label")
-            if [ "$code" = 200 ]; then echo "$key -> $label"; else echo "$key: HTTP $code"; rc=1; fi
-          done
-          curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $tok" "$api/operator/$id"
-          exit $rc
-        # "mxl:<video flow uuid>=<label>", flow ids derived exactly as in Terraform.
-        label_args: >-
-          {%- set out = [] -%}
-          {%- for f in dmf_workload.spec.functions if f.kind in ['mxl-testsrc', 'mxl-syncsrc'] -%}
-          {%- set _ = out.append('mxl:' ~ (('dmf://' ~ workload ~ '/' ~ f.name ~ '/video')
-                | to_uuid(namespace='6ba7b811-9dad-11d1-80b4-00c04fd430c8')) ~ '=' ~ (f.label | default(f.name))) -%}
-          {%- endfor -%}
-          {{ out }}
-      ansible.builtin.command:
-        argv: "{{ ['kubectl', '--kubeconfig=' ~ dmf_kubeconfig, '-n=' ~ ns, 'exec', 'deploy/' ~ mixer.name, '-c=switchframe', '--',
-                  'sh', '-c', label_script, 'source-labels'] + label_args }}"
-      register: source_labels
-      changed_when: false
-      retries: 6
-      delay: 5
-      until: source_labels.rc == 0
+      until: on_air.rc == 0
 
     - name: CONFIGURE check - flows live in the Flow Domain
       ansible.builtin.command: >-

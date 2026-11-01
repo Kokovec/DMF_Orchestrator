@@ -22,6 +22,7 @@ spec:
         app.kubernetes.io/component: media-function
       annotations:
         checksum/flows: {{ include (print $.Template.BasePath "/configmap-flows.yaml") . | sha256sum }}
+        dmf.ebu.ch/image-id: {{ .Values.imageId | default "" | quote }}
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -39,6 +40,44 @@ spec:
                   dmf.ebu.ch/workload: {{ .Values.workload }}
       {{- if gt (int .Values.switchframe.gpu) 0 }}
       runtimeClassName: nvidia
+      {{- end }}
+      {{- if .Values.mxl.sources }}
+      # After a host restart the Flow Domain is empty and every pod starts at
+      # once. SwitchFrame skips an input whose flow does not exist yet and never
+      # retries it, so wait for the input flows (bounded: one missing input must
+      # not keep the mixer off the air).
+      initContainers:
+        - name: wait-for-input-flows
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "switchframe.containerSecurityContext" . | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - |
+              domain="$1"; shift
+              i=0
+              for flow in "$@"; do
+                until [ -d "$domain/$flow.mxl-flow" ]; do
+                  i=$((i + 1))
+                  if [ "$i" -ge 120 ]; then echo "timed out waiting for flow $flow"; exit 0; fi
+                  sleep 1
+                done
+              done
+            - wait-for-input-flows
+            - {{ $domain }}
+            {{- range .Values.mxl.sources }}
+            - {{ .video }}
+            {{- if .audio }}
+            - {{ .audio }}
+            {{- end }}
+            {{- end }}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}
+          volumeMounts:
+            - {name: mxl-domain, mountPath: {{ $domain }}, readOnly: true}
       {{- end }}
       containers:
         - name: switchframe
@@ -98,6 +137,61 @@ spec:
             {{- if .Values.switchframe.srtPort }}
             - {name: srt, containerPort: {{ .Values.switchframe.srtPort }}, protocol: UDP}
             {{- end }}
+          {{- if .Values.configure.programSource }}
+          # SwitchFrame forgets its programme source and source labels on every
+          # restart, and only publishes programme flows with a source on air.
+          # Restore both here so any restart recovers without operator action.
+          # Always exits 0: a failed hook would kill the container.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - |
+                    log() { echo "dmf-configure: $*" > /proc/1/fd/1 2>/dev/null || true; }
+                    program="$1"; shift
+                    auth="Authorization: Bearer $SWITCHFRAME_API_TOKEN"
+                    api=http://127.0.0.1:{{ .Values.switchframe.httpPort }}/api
+                    i=0
+                    until curl -sf -o /dev/null -H "$auth" "$api/switch/state"; do
+                      i=$((i + 1))
+                      if [ "$i" -ge 120 ]; then log "API not ready, giving up"; exit 0; fi
+                      sleep 1
+                    done
+                    # Commands need an identified operator once operators exist;
+                    # a short-lived, named one also attributes the change.
+                    resp=$(curl -sf -X POST -H "$auth" -H 'Content-Type: application/json' \
+                      -d "{\"name\":\"dmf-automation-$(date +%s)\",\"role\":\"director\"}" "$api/operator/register") \
+                      || { log "operator registration failed"; exit 0; }
+                    tok=$(printf '%s' "$resp" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+                    id=$(printf '%s' "$resp" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+                    post() { curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' -d "$2" "$api/$1"; }
+                    retry() {
+                      n=0
+                      until [ "$(post "$1" "$2")" = 200 ]; do
+                        n=$((n + 1))
+                        if [ "$n" -ge 30 ]; then log "gave up on $1"; return 1; fi
+                        sleep 1
+                      done
+                    }
+                    for kv in "$@"; do
+                      key=${kv%%=*}; label=${kv#*=}
+                      retry "sources/$key/label" "{\"label\":\"$label\"}" && log "$key -> $label"
+                    done
+                    if curl -sf -H "$auth" "$api/switch/state" | grep -q '"programSource":"[^"]'; then
+                      log "programme already on air"
+                    else
+                      retry switch/cut "{\"source\":\"$program\"}" && log "programme: $program"
+                    fi
+                    curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $tok" "$api/operator/$id"
+                    exit 0
+                  - dmf-configure
+                  - {{ .Values.configure.programSource | quote }}
+                  {{- range .Values.configure.labels }}
+                  - {{ printf "%s=%s" .source .label | quote }}
+                  {{- end }}
+          {{- end }}
           startupProbe:
             httpGet: {path: /health, port: admin}
             periodSeconds: 2

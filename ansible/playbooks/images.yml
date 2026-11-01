@@ -41,3 +41,23 @@
         k3s ctr images import
         {{ (dmf_state_dir ~ '/images.tar') if ansible_connection == 'local' else '/var/tmp/dmf-images.tar' }}
       changed_when: true
+
+# Tags stay fixed, so PROVISION cannot tell a rebuilt image from the running one.
+# Record what was just loaded; the charts put each image id in a pod annotation,
+# so PROVISION rolls exactly the Media Functions whose image changed.
+- name: Record the image ids loaded into the cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Read image ids
+      ansible.builtin.command:
+        argv: [docker, image, inspect, --format, "{{ '{{.Id}}' }}", "{{ dmf_image_registry }}/{{ item }}:{{ dmf_image_tag }}"]
+      loop: "{{ dmf_images }}"
+      register: image_inspect
+      changed_when: false
+    - name: Write image ids for PROVISION
+      ansible.builtin.copy:
+        dest: "{{ dmf_state_dir }}/image-ids.json"
+        mode: "0644"
+        content: "{{ dict(dmf_images | zip(image_inspect.results | map(attribute='stdout'))) | to_nice_json }}\n"

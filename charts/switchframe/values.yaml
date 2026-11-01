@@ -1,6 +1,13 @@
 # -- DMF Media Workload this Media Function belongs to (required).
 workload: ""
 
+# Restored by the pod on every start (see postStart in the deployment).
+configure:
+  programSource: ""       # source put on programme when nothing is on air
+  labels: []              # [{source: mxl:<video flow id>, label: Camera 1}]
+
+imageId: ""               # rolls the pod when a rebuilt image is loaded under the same tag
+
 image:
   repository: dmf.local/switchframe
   tag: ""                 # defaults to .Chart.AppVersion

@@ -27,6 +27,7 @@ spec:
         # Env vars from a Secret are read only at start: roll the pod when the
         # client/cookie secret changes (client re-created, rotation).
         checksum/sso-secret: {{ .Values.sso.secretChecksum | quote }}
+        dmf.ebu.ch/image-id: {{ .Values.sso.bridgeImageId | default "" | quote }}
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false

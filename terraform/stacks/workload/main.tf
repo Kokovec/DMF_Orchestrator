@@ -78,6 +78,7 @@ locals {
     for f in sort(fileset("${var.charts_dir}/${c}", "**")) : filesha1("${var.charts_dir}/${c}/${f}")
   ])) }
 
+  image_ids = var.image_ids_file != "" && fileexists(var.image_ids_file) ? jsondecode(file(var.image_ids_file)) : {}
   images = {
     switchframe = "${var.image_registry}/switchframe"
     mxl_tools   = "${var.image_registry}/mxl-tools"
@@ -89,6 +90,7 @@ locals {
     podSecurity = { uid = local.mx.uid, gid = local.mx.gid }
     mxl         = { domainPath = local.domain_path }
     image       = { repository = local.images.mxl_tools, tag = var.image_tag }
+    imageId     = try(local.image_ids["mxl-tools"], "")
   }
 }
 
@@ -339,7 +341,16 @@ resource "helm_release" "mixer" {
     chartHash   = local.chart_hash["switchframe"]
     workload    = local.name
     image       = { repository = local.images.switchframe, tag = var.image_tag }
+    imageId     = try(local.image_ids["switchframe"], "")
     podSecurity = { uid = local.mx.uid, gid = local.mx.gid }
+    # Restored by the pod itself on every start: SwitchFrame forgets both.
+    configure = {
+      programSource = "mxl:${local.flow_id["${local.mixer.sources[0]}/video"]}"
+      labels = [for s in local.mixer.sources : {
+        source = "mxl:${local.flow_id["${s}/video"]}"
+        label  = try(local.functions[s].label, s)
+      }]
+    }
     mxl = {
       domainPath = local.domain_path
       sources = [for s in local.mixer.sources : {
@@ -372,6 +383,7 @@ resource "helm_release" "mixer" {
       existingSecret = kubernetes_secret_v1.sso.metadata[0].name
       secretChecksum = sha256("${keycloak_openid_client.workload.client_secret}/${random_password.cookie_secret.result}")
       bridgeImage    = { repository = local.images.sso_bridge, tag = var.image_tag }
+      bridgeImageId  = try(local.image_ids["sso-bridge"], "")
     }
   })]
   # Sources must be writing before SwitchFrame opens their flows.

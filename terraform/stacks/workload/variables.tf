@@ -19,6 +19,12 @@ variable "image_tag" {
   default     = "0.1.0"
 }
 
+variable "image_ids_file" {
+  description = "JSON map of image name to image id, written by make images. A changed id rolls that image's pods; tags stay fixed."
+  type        = string
+  default     = ""
+}
+
 variable "image_registry" {
   type    = string
   default = "dmf.local"

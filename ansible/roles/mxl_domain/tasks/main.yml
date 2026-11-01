@@ -2,7 +2,8 @@
 # PLAN "Plan Flow Domains", PROVISION "Create Flows", FINALISE "delete the
 # shared memory for the Flows and Domains").
 #
-# The domain is its own tmpfs, so:
+# The domain is its own tmpfs, mounted by a systemd unit so it returns after a
+# host restart, so:
 #   * its size is a hard reservation (Plan) and cannot starve other workloads;
 #   * uid/gid/mode on the mount give Unix access control (MXL Security);
 #   * unmounting releases every Grain at once (Finalise).
@@ -13,6 +14,11 @@
       size={{ mx.sizeMiB }}m,uid={{ mx.uid }},gid={{ mx.gid }},mode=2770,nosuid,nodev,noexec
   vars:
     mx: "{{ dmf_workload.spec.mediaExchange }}"
+
+- name: Resolve the Flow Domain mount unit name
+  ansible.builtin.command: systemd-escape --path --suffix=mount {{ mxl_domain_path }}
+  register: mxl_domain_unit
+  changed_when: false
 
 - name: Create the Flow Domain
   when: dmf_mxl_state == 'present'
@@ -34,16 +40,42 @@
         group: root
         mode: "0755"
 
-    # Mount only when absent. A live domain is never remounted: that would drop
-    # every Grain and restart the production. (ansible.posix.mount
-    # state=ephemeral remounts whenever the option text differs, e.g.
-    # size=2048m vs the kernel's size=2097152k.) Resize = finalise + provision.
-    - name: Mount the Flow Domain tmpfs  # noqa: command-instead-of-module  (module remounts live domains)
+    # A tmpfs does not survive a host restart. A systemd mount unit brings the
+    # domain back before k3s starts, so pods never bind the bare mount point.
+    - name: Install the Flow Domain mount unit
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ mxl_domain_unit.stdout }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=MXL Flow Domain {{ dmf_workload.spec.mediaExchange.domain }}
+          Before=k3s.service k3s-agent.service
+
+          [Mount]
+          What=tmpfs
+          Where={{ mxl_domain_path }}
+          Type=tmpfs
+          Options={{ mxl_domain_opts | trim }}
+
+          [Install]
+          WantedBy=local-fs.target
+
+    # Enable only. A live domain is never remounted: that would drop every Grain
+    # and restart the production. Systemd adopts an existing mount as this unit's
+    # active state. Changed options apply at the next restart; to resize now,
+    # finalise + provision.
+    - name: Enable the Flow Domain mount unit
+      ansible.builtin.systemd_service:
+        name: "{{ mxl_domain_unit.stdout }}"
+        enabled: true
+        daemon_reload: true
+
+    - name: Mount the Flow Domain tmpfs
       when: mxl_domain_findmnt.rc != 0
-      ansible.builtin.command: >-
-        mount -t tmpfs -o {{ mxl_domain_opts }} tmpfs {{ mxl_domain_path }}
+      ansible.builtin.systemd_service:
+        name: "{{ mxl_domain_unit.stdout }}"
+        state: started
       register: mxl_domain_mount
-      changed_when: true
 
     - name: Fail if something other than tmpfs is mounted there
       when: mxl_domain_findmnt.rc == 0
@@ -83,6 +115,23 @@
 - name: Delete the Flow Domain
   when: dmf_mxl_state == 'absent'
   block:
+    - name: Check for the Flow Domain mount unit
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ mxl_domain_unit.stdout }}"
+      register: mxl_domain_unit_file
+    - name: Stop and disable the Flow Domain mount unit
+      when: mxl_domain_unit_file.stat.exists
+      ansible.builtin.systemd_service:
+        name: "{{ mxl_domain_unit.stdout }}"
+        state: stopped
+        enabled: false
+    - name: Remove the Flow Domain mount unit
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ mxl_domain_unit.stdout }}"
+        state: absent
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
     - name: Unmount the Flow Domain tmpfs (frees all Grains)
       ansible.posix.mount:
         path: "{{ mxl_domain_path }}"

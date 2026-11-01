@@ -115,6 +115,25 @@ if tsrc2.count(old_t) != 1:
     sys.exit("mixer-audio-latency: mixer_ticker.go: output PTS code changed upstream")
 ticker.write_text(tsrc2.replace(old_t, new_t))
 
+# Per-source preview streams skip the mixer but have the same kind of offset:
+# each AAC frame carries the read time of its newest block, which is about one
+# frame after that block's first sample, plus the encoder's delay (measured in
+# Chrome: beep PTS 60.5 ms after flash PTS). Raw PCM to the mixer is unaffected.
+source = pathlib.Path(sys.argv[1]) / "mxl" / "source.go"
+ssrc = source.read_text()
+old_s = """	frame := &media.AudioFrame{
+		PTS:        pts,
+		Data:       encoded,
+"""
+new_s = """	frame := &media.AudioFrame{
+		// DMF patch: fixed mixer latency. Block start + AAC encoder delay.
+		PTS:        pts - 3*1024*90000/int64(sampleRate),
+		Data:       encoded,
+"""
+if ssrc.count(old_s) != 1:
+    sys.exit("mixer-audio-latency: mxl/source.go: audio frame code changed upstream")
+source.write_text(ssrc.replace(old_s, new_s))
+
 (root / "ringbuf_dmf_test.go").write_text('''package audio
 
 import "testing"

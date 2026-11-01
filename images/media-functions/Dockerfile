@@ -61,7 +61,11 @@ WORKDIR /src/switchframe/ui
 # (see the script header for measurements).
 COPY patches/ui-audio-jitterbuffer.mjs /patches/
 RUN node /patches/ui-audio-jitterbuffer.mjs /src/switchframe/ui/src/lib/prism
-RUN npm ci && npm run build
+# The player's A/V clock subtracted audio it had not played yet, so the offset
+# between picture and sound changed on every page load (see the script header).
+COPY patches/ui-av-clock.mjs /patches/
+RUN node /patches/ui-av-clock.mjs /src/switchframe/ui/src/lib/prism
+RUN npm ci && npx vitest run src/lib/prism/audio-decoder.test.ts src/lib/prism/renderer.test.ts && npm run build
 
 # ----------------------------------------------------------------------------
 # SwitchFrame server with MXL

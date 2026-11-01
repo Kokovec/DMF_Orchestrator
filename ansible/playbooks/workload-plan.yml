@@ -68,6 +68,7 @@
           kubeconfig: "{{ dmf_kubeconfig }}"
           charts_dir: "{{ dmf_repo_root }}/charts"
           image_tag: "{{ dmf_image_tag }}"
+          image_ids_file: "{{ dmf_state_dir }}/image-ids.json"
       register: tfplan
       check_mode: false
 

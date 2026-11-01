@@ -32,6 +32,7 @@ spec:
         {{- include "mxlfn.labels" . | nindent 8 }}
       annotations:
         checksum/flows: {{ toJson .Values.flowDefs | sha256sum }}
+        dmf.ebu.ch/image-id: {{ .Values.imageId | default "" | quote }}
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
