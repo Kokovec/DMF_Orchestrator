@@ -1,0 +1,89 @@
+# -- DMF Media Workload this Media Function belongs to (required).
+workload: ""
+
+image:
+  repository: dmf.local/switchframe
+  tag: ""                 # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+# Workload identity. Every Media Function of a workload runs with the same
+# uid/gid, which owns the workload's MXL Flow Domain (mode 2770).
+podSecurity:
+  uid: 20001
+  gid: 20001
+  readOnlyRootFilesystem: true
+
+mxl:
+  # Host path of the Flow Domain tmpfs, created by Ansible during PROVISION.
+  # The platform's ValidatingAdmissionPolicy only admits this exact path.
+  domainPath: ""
+  # Initial connections (CONFIGURE): list of {video, audio, data} flow UUIDs.
+  sources: []
+  output:
+    enabled: true
+    name: program
+    # NMOS IS-04 flow definitions (JSON objects) written to the domain.
+    videoFlow: {}
+    audioFlow: {}
+
+switchframe:
+  format: 1080p29.97
+  logLevel: info
+  quicPort: 8443          # UDP: WebTransport/HTTP3 straight to the browser
+  srtPort: 6464           # UDP: SRT listener; 0 disables
+  httpPort: 8081          # HTTP/1.1 API + embedded UI, only reachable via the SSO gateway
+  adminPort: 9090         # metrics / health / pprof, only reachable from monitoring
+  goMemLimit: 6GiB
+  extraArgs: []
+  # Secret with keys api-token, admin-token, invite-tokens (created by Terraform).
+  existingSecret: ""
+  resources:
+    requests: {cpu: "2", memory: 4Gi}
+    limits: {cpu: "6", memory: 8Gi}
+  gpu: 0                  # nvidia.com/gpu limit; needs a CUDA image and the NVIDIA device plugin
+
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClass: ""        # "" = cluster default (k3s local-path)
+
+replayTmpfsSize: 1Gi
+
+service:
+  # QUIC/SRT must reach the browser/contribution sources directly (no HTTP
+  # proxy can carry WebTransport today), so they use a LoadBalancer.
+  mediaType: LoadBalancer
+
+ingress:
+  enabled: true
+  className: traefik
+  hostname: ""
+  clusterIssuer: dmf-ca
+
+sso:
+  enabled: true
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: v7.15.5
+  bridgeImage:
+    repository: dmf.local/sso-bridge
+    tag: ""               # defaults to .Chart.AppVersion
+  issuerUrl: ""           # e.g. https://keycloak.dmf.test/realms/dmf
+  internalUrl: ""         # e.g. http://keycloak.dmf-identity.svc.cluster.local:8080/realms/dmf
+  clientId: dmf-apps
+  # Secret with keys client-secret, cookie-secret.
+  existingSecret: ""
+  # Hash of that Secret's content; a change restarts the gateway (set by Terraform).
+  secretChecksum: ""
+  roles: [director, audio, graphics, captioner, viewer]
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: kube-system
+  monitoringNamespace: dmf-monitoring
+  identityNamespace: dmf-identity

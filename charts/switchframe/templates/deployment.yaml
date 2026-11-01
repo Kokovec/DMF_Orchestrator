@@ -1,0 +1,146 @@
+{{- $fullname := include "switchframe.fullname" . -}}
+{{- $domain := required "mxl.domainPath is required" .Values.mxl.domainPath -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+    app.kubernetes.io/component: media-function
+spec:
+  replicas: 1
+  # One writer per MXL output flow and fixed host ports: never run two at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "switchframe.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "switchframe.labels" . | nindent 8 }}
+        app.kubernetes.io/component: media-function
+      annotations:
+        checksum/flows: {{ include (print $.Template.BasePath "/configmap-flows.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- include "switchframe.podSecurityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: 20
+      # MXL shared memory is host-local: every Media Function of a workload must
+      # land on the same host as its Flow Domain peers.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  dmf.ebu.ch/workload: {{ .Values.workload }}
+      {{- if gt (int .Values.switchframe.gpu) 0 }}
+      runtimeClassName: nvidia
+      {{- end }}
+      containers:
+        - name: switchframe
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "switchframe.containerSecurityContext" . | nindent 12 }}
+          args:
+            - --addr=:{{ .Values.switchframe.quicPort }}
+            - --http-fallback
+            - --http-addr=:{{ .Values.switchframe.httpPort }}
+            - --admin-addr=0.0.0.0:{{ .Values.switchframe.adminPort }}
+            {{- if .Values.ingress.hostname }}
+            - --allowed-origins=https://{{ .Values.ingress.hostname }}
+            {{- end }}
+            - --format={{ .Values.switchframe.format }}
+            - --log-level={{ .Values.switchframe.logLevel }}
+            - --cache-dir=/cache
+            - --replay-tmpfs-dir=/replay
+            - --mxl-domain={{ $domain }}
+            {{- with include "switchframe.mxlSources" . }}
+            - --mxl-sources={{ . }}
+            {{- end }}
+            {{- if .Values.mxl.output.enabled }}
+            - --mxl-output={{ .Values.mxl.output.name }}
+            - --mxl-output-video-def=/etc/switchframe/flows/output_video.json
+            - --mxl-output-audio-def=/etc/switchframe/flows/output_audio.json
+            {{- end }}
+            {{- if .Values.switchframe.srtPort }}
+            - --srt-listen=:{{ .Values.switchframe.srtPort }}
+            {{- end }}
+            {{- range .Values.switchframe.extraArgs }}
+            - {{ . }}
+            {{- end }}
+          env:
+            - name: APP_ENV
+              value: production          # JSON structured logs
+            - name: HOME
+              value: /var/lib/switchframe
+            - name: SWITCHFRAME_STATE_DIR
+              value: /var/lib/switchframe
+            - name: GOMEMLIMIT
+              value: {{ .Values.switchframe.goMemLimit | quote }}
+            - name: SWITCHFRAME_API_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ required "switchframe.existingSecret is required" .Values.switchframe.existingSecret }}, key: api-token}
+            - name: SWITCHFRAME_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.switchframe.existingSecret }}, key: admin-token}
+            - name: SWITCHFRAME_INVITE_TOKENS
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.switchframe.existingSecret }}, key: invite-tokens}
+          ports:
+            - {name: quic, containerPort: {{ .Values.switchframe.quicPort }}, protocol: UDP}
+            - {name: http, containerPort: {{ .Values.switchframe.httpPort }}, protocol: TCP}
+            - {name: admin, containerPort: {{ .Values.switchframe.adminPort }}, protocol: TCP}
+            {{- if .Values.switchframe.srtPort }}
+            - {name: srt, containerPort: {{ .Values.switchframe.srtPort }}, protocol: UDP}
+            {{- end }}
+          startupProbe:
+            httpGet: {path: /health, port: admin}
+            periodSeconds: 2
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: {path: /health, port: admin}
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /ready, port: admin}
+            periodSeconds: 5
+          resources:
+            {{- $res := deepCopy .Values.switchframe.resources }}
+            {{- if gt (int .Values.switchframe.gpu) 0 }}
+            {{- $_ := set $res.limits "nvidia.com/gpu" .Values.switchframe.gpu }}
+            {{- end }}
+            {{- toYaml $res | nindent 12 }}
+          volumeMounts:
+            - {name: mxl-domain, mountPath: {{ $domain }}}
+            - {name: flows, mountPath: /etc/switchframe/flows, readOnly: true}
+            - {name: state, mountPath: /var/lib/switchframe}
+            - {name: cache, mountPath: /cache}
+            - {name: replay, mountPath: /replay}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: mxl-domain
+          hostPath:
+            path: {{ $domain }}
+            type: Directory        # must already exist: created by the PROVISION stage
+        - name: flows
+          configMap:
+            name: {{ $fullname }}-flows
+        - name: state
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $fullname }}-state
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: cache
+          emptyDir: {}
+        - name: replay
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.replayTmpfsSize }}
+        - name: tmp
+          emptyDir: {}

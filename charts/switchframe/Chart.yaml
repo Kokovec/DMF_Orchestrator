@@ -1,0 +1,13 @@
+apiVersion: v2
+name: switchframe
+description: >-
+  SwitchFrame vision mixer packaged as an EBU DMF Media Function: MXL media
+  exchange, OIDC single sign-on gateway, Prometheus monitoring and zero-trust
+  network policy.
+type: application
+version: 0.1.0
+appVersion: "792361540f14"
+keywords: [dmf, ebu, mxl, broadcast, switcher]
+sources:
+  - https://github.com/thiagopnts/switchframe
+  - https://github.com/dmf-mxl/mxl

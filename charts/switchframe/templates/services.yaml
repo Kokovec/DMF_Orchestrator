@@ -1,0 +1,34 @@
+{{- $fullname := include "switchframe.fullname" . -}}
+# Control plane: HTTP API + embedded UI (only the SSO gateway may call it) and admin/metrics.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-api
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+    app.kubernetes.io/component: media-function
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "switchframe.selector" . | nindent 4 }}
+  ports:
+    - {name: http, port: {{ .Values.switchframe.httpPort }}, targetPort: http, protocol: TCP}
+    - {name: admin, port: {{ .Values.switchframe.adminPort }}, targetPort: admin, protocol: TCP}
+---
+# Media plane: WebTransport (QUIC) to browsers and SRT contribution input.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-media
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+    app.kubernetes.io/component: media-function
+spec:
+  type: {{ .Values.service.mediaType }}
+  selector:
+    {{- include "switchframe.selector" . | nindent 4 }}
+  ports:
+    - {name: quic, port: {{ .Values.switchframe.quicPort }}, targetPort: quic, protocol: UDP}
+    {{- if .Values.switchframe.srtPort }}
+    - {name: srt, port: {{ .Values.switchframe.srtPort }}, targetPort: srt, protocol: UDP}
+    {{- end }}

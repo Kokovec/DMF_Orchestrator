@@ -1,0 +1,181 @@
+# PROVISION + CONFIGURE (DMF RA lifecycle):
+#   Media Exchange : create the Flow Domain (tmpfs) on every host
+#   Container/MF   : namespace, reservation, identity, Media Functions
+#   Configure      : initial MXL connections; verify flows are live and registered
+#   ansible-playbook playbooks/workload-provision.yml -e workload=news-studio
+- name: Load workload design
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Read the workload design
+      ansible.builtin.set_fact:
+        dmf_workload: "{{ lookup('ansible.builtin.file', dmf_repo_root ~ '/workloads/' ~ workload ~ '.yaml') | from_yaml }}"
+
+- name: Media Exchange - create Flow Domain
+  hosts: dmf_cluster
+  become: true
+  gather_facts: false
+  vars:
+    dmf_workload: "{{ hostvars['localhost'].dmf_workload }}"
+  roles:
+    - role: mxl_domain
+      dmf_mxl_state: present
+
+- name: Provision and configure Media Functions
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    workload_file: "{{ dmf_repo_root }}/workloads/{{ workload }}.yaml"
+    ns: "wl-{{ workload }}"
+    kubectl: "kubectl --kubeconfig {{ dmf_kubeconfig }} -n wl-{{ workload }}"
+    expected_flows: >-
+      {{ (dmf_workload.spec.functions | selectattr('kind', 'equalto', 'mxl-testsrc') | list | length) * 2
+         + (2 if (dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first).programOutput | default(true) else 0) }}
+  tasks:
+    - name: Resolve facility hostnames on the control node
+      ansible.builtin.include_role:
+        name: control_node
+      vars:
+        # The workload stack's Keycloak provider needs keycloak.<domain> too.
+        dmf_hostnames:
+          - "{{ dmf_workload.spec.access.hostname }}"
+          - "keycloak.{{ dmf_base_domain | default('dmf.test') }}"
+          - "grafana.{{ dmf_base_domain | default('dmf.test') }}"
+
+    - name: Terraform apply in workspace {{ workload }}
+      community.general.terraform:
+        project_path: "{{ dmf_terraform_dir }}/workload"
+        workspace: "{{ workload }}"
+        state: present
+        force_init: true
+        variables:
+          workload_file: "{{ workload_file }}"
+          kubeconfig: "{{ dmf_kubeconfig }}"
+          charts_dir: "{{ dmf_repo_root }}/charts"
+          image_tag: "{{ dmf_image_tag }}"
+      register: applied
+
+    - name: Restart Media Functions that started before their Flow Domain existed
+      when: >-
+        (groups['dmf_cluster'] | map('extract', hostvars, 'mxl_domain_remounted') | select('equalto', true) | list | length) > 0
+      ansible.builtin.command: "{{ kubectl }} rollout restart deploy -l dmf.ebu.ch/workload={{ workload }}"
+      register: restarted
+      changed_when: restarted.rc == 0
+      failed_when: false
+
+    - name: Wait for every Media Function to roll out
+      ansible.builtin.command: "{{ kubectl }} rollout status deploy --timeout=600s"
+      changed_when: false
+
+    # SwitchFrame publishes programme video only once a source is on programme.
+    # Put the first configured source on air, but only if programme is empty,
+    # so re-running PROVISION never cuts a live production.
+    - name: CONFIGURE - initial programme connection
+      vars:
+        mixer: "{{ dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first }}"
+        first_source: "{{ 'mxl:' ~ ('dmf://' ~ workload ~ '/' ~ mixer.sources[0] ~ '/video') | to_uuid(namespace='6ba7b811-9dad-11d1-80b4-00c04fd430c8') }}"
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig={{ dmf_kubeconfig }}
+          - -n={{ ns }}
+          - exec
+          - deploy/{{ mixer.name }}
+          - -c=switchframe
+          - --
+          - sh
+          - -c
+          - |
+            src="$1"
+            auth="Authorization: Bearer $SWITCHFRAME_API_TOKEN"
+            api=http://127.0.0.1:8081/api
+            if curl -sf -H "$auth" "$api/switch/state" | grep -q '"programSource":"[^"]'; then echo on-air; exit 0; fi
+            # Once operators exist SwitchFrame only accepts commands from an
+            # identified operator ("operator not identified" for the session
+            # token). Act as a short-lived, named automation operator, which
+            # also attributes the change in SwitchFrame (accounting).
+            resp=$(curl -sf -X POST -H "$auth" -H 'Content-Type: application/json' \
+              -d "{\"name\":\"dmf-automation-$(date +%s)\",\"role\":\"director\"}" "$api/operator/register") \
+              || { echo "register failed"; exit 1; }
+            tok=$(printf '%s' "$resp" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+            id=$(printf '%s' "$resp" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+            out=$(curl -s -w ' HTTP%{http_code}' -X POST -H "Authorization: Bearer $tok" \
+              -H 'Content-Type: application/json' -d "{\"source\":\"$src\"}" "$api/switch/cut")
+            curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $tok" "$api/operator/$id"
+            case "$out" in *HTTP200) echo cut ;; *) echo "cut failed: $out"; exit 1 ;; esac
+          - initial-cut
+          - "{{ first_source }}"
+      register: initial_cut
+      changed_when: initial_cut.stdout == 'cut'
+      retries: 12
+      delay: 5
+      until: initial_cut.rc == 0
+
+    # Name sources after the workload design ("Camera 1"), instead of the raw
+    # MXL flow id SwitchFrame shows by default. Idempotent.
+    - name: CONFIGURE - source labels from the workload design
+      vars:
+        mixer: "{{ dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first }}"
+        label_script: |
+          auth="Authorization: Bearer $SWITCHFRAME_API_TOKEN"
+          api=http://127.0.0.1:8081/api
+          # Commands need an identified operator once operators exist (see initial cut).
+          resp=$(curl -sf -X POST -H "$auth" -H 'Content-Type: application/json' \
+            -d "{\"name\":\"dmf-automation-$(date +%s)\",\"role\":\"director\"}" "$api/operator/register") \
+            || { echo "register failed"; exit 1; }
+          tok=$(printf '%s' "$resp" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          id=$(printf '%s' "$resp" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+          rc=0
+          for kv in "$@"; do
+            key=${kv%%=*}; label=${kv#*=}
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $tok" \
+              -H 'Content-Type: application/json' -d "{\"label\":\"$label\"}" "$api/sources/$key/label")
+            if [ "$code" = 200 ]; then echo "$key -> $label"; else echo "$key: HTTP $code"; rc=1; fi
+          done
+          curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $tok" "$api/operator/$id"
+          exit $rc
+        # "mxl:<video flow uuid>=<label>", flow ids derived exactly as in Terraform.
+        label_args: >-
+          {%- set out = [] -%}
+          {%- for f in dmf_workload.spec.functions if f.kind == 'mxl-testsrc' -%}
+          {%- set _ = out.append('mxl:' ~ (('dmf://' ~ workload ~ '/' ~ f.name ~ '/video')
+                | to_uuid(namespace='6ba7b811-9dad-11d1-80b4-00c04fd430c8')) ~ '=' ~ (f.label | default(f.name))) -%}
+          {%- endfor -%}
+          {{ out }}
+      ansible.builtin.command:
+        argv: "{{ ['kubectl', '--kubeconfig=' ~ dmf_kubeconfig, '-n=' ~ ns, 'exec', 'deploy/' ~ mixer.name, '-c=switchframe', '--',
+                  'sh', '-c', label_script, 'source-labels'] + label_args }}"
+      register: source_labels
+      changed_when: false
+      retries: 6
+      delay: 5
+      until: source_labels.rc == 0
+
+    - name: CONFIGURE check - flows live in the Flow Domain
+      ansible.builtin.command: >-
+        {{ kubectl }} exec deploy/mxl-flow-agent --
+        python3 -I -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:9102/metrics').read().decode())"
+      register: agent_metrics
+      changed_when: false
+      until: >-
+        (agent_metrics.stdout_lines | select('match', '^dmf_mxl_flow_active\{.*\} 1$') | list | length) >= (expected_flows | int)
+      retries: 24
+      delay: 5
+
+    - name: CONFIGURE check - flows registered in NMOS IS-04
+      ansible.builtin.assert:
+        quiet: true
+        that: agent_metrics.stdout is search('dmf_nmos_registration_up\{[^}]*\} 1')
+        fail_msg: "Flows are live but the NMOS registration is not healthy (see mxl-flow-agent logs)."
+
+    - name: Workload ready
+      ansible.builtin.debug:
+        msg:
+          - "Workload        : {{ workload }} (namespace {{ ns }})"
+          - "Operators       : {{ applied.outputs.entry_url.value }}"
+          - "Flow Domain     : {{ applied.outputs.mxl_domain_path.value }}"
+          - "Flows           : {{ applied.outputs.flows.value | to_nice_json }}"
+          - "Dashboard       : https://grafana.{{ dmf_base_domain | default('dmf.test') }}/d/dmf-overview"
+          - "Operator logins : `make secrets` (realm dmf)"

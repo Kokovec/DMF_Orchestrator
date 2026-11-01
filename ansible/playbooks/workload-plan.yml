@@ -1,0 +1,76 @@
+# PLAN (DMF RA lifecycle): validate the Design, check capacity, preview changes.
+#   ansible-playbook playbooks/workload-plan.yml -e workload=news-studio
+- name: Plan a Media Workload
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    workload_file: "{{ dmf_repo_root }}/workloads/{{ workload }}.yaml"
+  tasks:
+    - name: Load workload design
+      ansible.builtin.set_fact:
+        dmf_workload: "{{ lookup('ansible.builtin.file', workload_file) | from_yaml }}"
+
+    - name: Validate design
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - dmf_workload.kind == 'MediaWorkload'
+          - dmf_workload.metadata.name == workload
+          - dmf_workload.metadata.name is match('^[a-z0-9]([-a-z0-9]{0,40}[a-z0-9])?$')
+          - dmf_workload.spec.mediaExchange.domain is match('^[a-z0-9][-a-z0-9]{0,62}$')
+          - dmf_workload.spec.mediaExchange.uid | int >= 10000
+          - dmf_workload.spec.mediaExchange.uid == dmf_workload.spec.mediaExchange.gid
+          - dmf_workload.spec.mediaExchange.sizeMiB | int >= 256
+          - dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | list | length == 1
+          - dmf_workload.spec.access.hostname is match('^[a-z0-9.-]+$')
+        fail_msg: "workloads/{{ workload }}.yaml is not a valid MediaWorkload design"
+
+    - name: Check that uid/domain/ports are not used by another provisioned workload
+      ansible.builtin.command: >-
+        kubectl --kubeconfig {{ dmf_kubeconfig }} get ns -l dmf.ebu.ch/workload!={{ workload }},dmf.ebu.ch/workload
+        -o jsonpath='{range .items[*]}{.metadata.labels.dmf\.ebu\.ch/uid} {.metadata.labels.dmf\.ebu\.ch/flow-domain}{"\n"}{end}'
+      register: others
+      changed_when: false
+
+    - name: Assert unique workload identity
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - (dmf_workload.spec.mediaExchange.uid | string) not in (others.stdout_lines | map('split', ' ') | map('first') | list)
+          - dmf_workload.spec.mediaExchange.domain not in (others.stdout_lines | map('split', ' ') | map('last') | list)
+        fail_msg: "uid or Flow Domain already used by another workload"
+
+    - name: Capacity check (reserve without oversubscription)
+      ansible.builtin.command: "python3 {{ dmf_repo_root }}/ansible/scripts/capacity.py {{ workload_file }} {{ dmf_kubeconfig }}"
+      register: capacity
+      changed_when: false
+      failed_when: false
+
+    - name: Capacity verdict
+      ansible.builtin.debug:
+        msg: "{{ capacity.stdout | from_json }}"
+
+    - name: Stop if the workload does not fit
+      ansible.builtin.fail:
+        msg: "Not enough unreserved capacity for {{ workload }} (see verdict above)."
+      when: capacity.rc != 0
+
+    - name: Terraform plan in workspace {{ workload }}
+      community.general.terraform:
+        project_path: "{{ dmf_terraform_dir }}/workload"
+        workspace: "{{ workload }}"
+        state: planned
+        plan_file: "{{ dmf_state_dir }}/{{ workload }}.tfplan"
+        force_init: true
+        variables:
+          workload_file: "{{ workload_file }}"
+          kubeconfig: "{{ dmf_kubeconfig }}"
+          charts_dir: "{{ dmf_repo_root }}/charts"
+          image_tag: "{{ dmf_image_tag }}"
+      register: tfplan
+      check_mode: false
+
+    - name: Plan summary
+      ansible.builtin.debug:
+        msg: "{{ tfplan.stdout_lines | select('search', 'Plan:|No changes') | list }}"

@@ -1,0 +1,37 @@
+# -- DMF Media Workload (required).
+workload: ""
+# -- Role of this function, used as a label: input | processing | output | agent
+role: input
+
+image:
+  repository: dmf.local/mxl-tools
+  tag: ""                 # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+command: []
+args: []
+env: {}
+
+podSecurity:
+  uid: 20001
+  gid: 20001
+
+mxl:
+  domainPath: ""          # required; mounted at the same path inside the container
+
+# -- NMOS IS-04 flow definitions mounted at /etc/mxl/flows/<key>.
+flowDefs: {}
+
+resources:
+  requests: {cpu: 250m, memory: 256Mi}
+  limits: {cpu: "1", memory: 1Gi}
+
+metrics:
+  port: 0                 # >0 exposes a Service + ServiceMonitor on this port
+  interval: 15s
+
+networkPolicy:
+  enabled: true
+  monitoringNamespace: dmf-monitoring
+  # Extra egress targets as {namespace, port}, e.g. the NMOS registry.
+  egress: []

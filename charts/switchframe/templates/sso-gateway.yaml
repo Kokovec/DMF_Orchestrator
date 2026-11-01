@@ -1,0 +1,127 @@
+{{- if .Values.sso.enabled }}
+{{- $fullname := include "switchframe.fullname" . -}}
+{{- $issuer := required "sso.issuerUrl is required" .Values.sso.issuerUrl -}}
+{{- $internal := required "sso.internalUrl is required" .Values.sso.internalUrl -}}
+{{- $host := required "ingress.hostname is required" .Values.ingress.hostname -}}
+# SSO gateway = oauth2-proxy (Keycloak OIDC, PKCE) + sso-bridge sidecar.
+# The bridge binds 127.0.0.1 only, so the identity headers it trusts can only
+# come from oauth2-proxy in the same pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-gateway
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sso-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "switchframe.gatewaySelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "switchframe.labels" . | nindent 8 }}
+        app.kubernetes.io/component: sso-gateway
+      annotations:
+        # Env vars from a Secret are read only at start: roll the pod when the
+        # client/cookie secret changes (client re-created, rotation).
+        checksum/sso-secret: {{ .Values.sso.secretChecksum | quote }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: oauth2-proxy
+          image: "{{ .Values.sso.image.repository }}:{{ .Values.sso.image.tag }}"
+          securityContext:
+            {{- include "switchframe.containerSecurityContext" . | nindent 12 }}
+          args:
+            - --http-address=0.0.0.0:4180
+            - --metrics-address=0.0.0.0:44180
+            - --provider=oidc
+            - --provider-display-name=DMF
+            - --client-id={{ .Values.sso.clientId }}
+            - --code-challenge-method=S256
+            - --oidc-issuer-url={{ $issuer }}
+            # Browser-facing endpoints use the public issuer; back-channel calls
+            # stay inside the cluster so pods don't need the facility hostnames.
+            - --skip-oidc-discovery=true
+            - --login-url={{ $issuer }}/protocol/openid-connect/auth
+            - --redeem-url={{ $internal }}/protocol/openid-connect/token
+            - --oidc-jwks-url={{ $internal }}/protocol/openid-connect/certs
+            - --profile-url={{ $internal }}/protocol/openid-connect/userinfo
+            - --redirect-url=https://{{ $host }}/oauth2/callback
+            # Explicit, so oauth2-proxy doesn't append a "groups" scope for
+            # --allowed-group: groups come from a mapper on the client.
+            - --scope=openid email profile
+            - --oidc-groups-claim=groups
+            {{- range .Values.sso.roles }}
+            - --allowed-group=/{{ $.Values.workload }}/{{ . }}
+            {{- end }}
+            - --email-domain=*
+            - --insecure-oidc-allow-unverified-email=true
+            - --reverse-proxy=true
+            - --skip-provider-button=true
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --cookie-name=_dmf_{{ .Values.workload | replace "-" "_" }}
+            - --cookie-expire=12h
+            - --pass-user-headers=true
+            # SwitchFrame's own bearer token must reach it unmodified.
+            - --pass-basic-auth=false
+            - --pass-access-token=false
+            - --pass-authorization-header=false
+            - --upstream=http://127.0.0.1:8000/sso/
+            - --upstream=http://{{ $fullname }}-api:{{ .Values.switchframe.httpPort }}/
+          env:
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: {{ required "sso.existingSecret is required" .Values.sso.existingSecret }}, key: client-secret}
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.sso.existingSecret }}, key: cookie-secret}
+          ports:
+            - {name: http, containerPort: 4180}
+            - {name: metrics, containerPort: 44180}
+          readinessProbe:
+            httpGet: {path: /ready, port: http}
+          livenessProbe:
+            httpGet: {path: /ping, port: http}
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {memory: 128Mi}
+        - name: sso-bridge
+          image: "{{ .Values.sso.bridgeImage.repository }}:{{ .Values.sso.bridgeImage.tag | default .Chart.AppVersion }}"
+          securityContext:
+            {{- include "switchframe.containerSecurityContext" . | nindent 12 }}
+          env:
+            - {name: WORKLOAD, value: {{ .Values.workload | quote }}}
+            - {name: SWITCHFRAME_URL, value: "http://{{ $fullname }}-api:{{ .Values.switchframe.httpPort }}"}
+            - {name: LISTEN_ADDR, value: "127.0.0.1:8000"}
+            - {name: ROLE_PRIORITY, value: {{ join "," .Values.sso.roles | quote }}}
+            - name: SWITCHFRAME_API_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.switchframe.existingSecret }}, key: api-token}
+          resources:
+            requests: {cpu: 10m, memory: 24Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-gateway
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sso-gateway
+spec:
+  selector:
+    {{- include "switchframe.gatewaySelector" . | nindent 4 }}
+  ports:
+    - {name: http, port: 4180, targetPort: http}
+    - {name: metrics, port: 44180, targetPort: metrics}
+{{- end }}

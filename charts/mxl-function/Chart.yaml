@@ -1,0 +1,8 @@
+apiVersion: v2
+name: mxl-function
+description: >-
+  Generic EBU DMF Media Function attached to an MXL Flow Domain (input sources
+  such as mxl-gst-testsrc, output sinks, or the mxl-flow-agent).
+type: application
+version: 0.1.0
+appVersion: "v1.1.0"

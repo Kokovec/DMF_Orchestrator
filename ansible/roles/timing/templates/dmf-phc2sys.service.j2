@@ -1,0 +1,13 @@
+[Unit]
+Description=DMF: discipline system clock from the PTP hardware clock
+After=dmf-ptp4l.service
+Requires=dmf-ptp4l.service
+
+[Service]
+# -w waits for ptp4l and takes the TAI-UTC offset from it.
+ExecStart=/usr/sbin/phc2sys -s {{ dmf_ptp_interface }} -c CLOCK_REALTIME -w -m
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

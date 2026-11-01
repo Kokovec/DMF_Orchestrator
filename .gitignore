@@ -1,0 +1,9 @@
+.tools/
+.state/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfstate.d/
+__pycache__/
+*.pyc

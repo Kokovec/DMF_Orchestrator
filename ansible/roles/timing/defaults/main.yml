@@ -1,0 +1,5 @@
+# Resolved mode: see dmf_timing_mode in group_vars.
+dmf_timing_effective: >-
+  {{ dmf_timing_mode if dmf_timing_mode != 'auto'
+     else ('ptp' if dmf_ptp_interface | length > 0
+     else ('host' if dmf_is_wsl else 'ntp')) }}

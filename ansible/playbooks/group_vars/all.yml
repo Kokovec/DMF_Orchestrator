@@ -1,0 +1,31 @@
+# Repository layout (playbooks live in ansible/playbooks/).
+dmf_repo_root: "{{ playbook_dir | dirname | dirname }}"
+dmf_state_dir: "{{ dmf_repo_root }}/.state"
+dmf_kubeconfig: "{{ dmf_state_dir }}/kubeconfig"
+dmf_terraform_dir: "{{ dmf_repo_root }}/terraform/stacks"
+
+# dmf_base_domain and dmf_ingress_address come from the inventory that the
+# infrastructure stack generates (defaults live in roles/control_node).
+
+# Host Platform
+dmf_is_wsl: "{{ 'microsoft' in (ansible_kernel | default('') | lower) }}"
+dmf_mxl_root: /var/lib/dmf/mxl
+dmf_udp_buffer_bytes: 134217728      # SwitchFrame deployment guide: UDP-heavy SRT/QUIC
+dmf_nofile_limit: 65536
+dmf_unattended_upgrades: true
+
+# Timing: auto | ptp | ntp | host
+#   auto -> ptp if dmf_ptp_interface is set, host-managed on WSL2, else ntp
+dmf_timing_mode: auto
+dmf_ptp_interface: ""
+dmf_ptp_domain: 127                  # SMPTE ST 2059-2 default domain
+dmf_ntp_servers: [0.pool.ntp.org, 1.pool.ntp.org, 2.pool.ntp.org]
+
+# Container Platform
+dmf_k3s_version: v1.36.5+k3s1
+dmf_enable_gpu: false
+
+# Images (make images)
+dmf_image_registry: dmf.local
+dmf_image_tag: "0.1.0"
+dmf_images: [switchframe, mxl-tools, sso-bridge]

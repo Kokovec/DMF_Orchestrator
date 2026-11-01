@@ -1,0 +1,97 @@
+{{- $domain := required "mxl.domainPath is required" .Values.mxl.domainPath -}}
+{{- if .Values.flowDefs }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-flows
+  labels:
+    {{- include "mxlfn.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.flowDefs }}
+  {{ $k }}: |
+    {{- toPrettyJson $v | nindent 4 }}
+  {{- end }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "mxlfn.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate        # one MXL writer per flow
+  selector:
+    matchLabels:
+      {{- include "mxlfn.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mxlfn.labels" . | nindent 8 }}
+      annotations:
+        checksum/flows: {{ toJson .Values.flowDefs | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.podSecurity.uid }}
+        runAsGroup: {{ .Values.podSecurity.gid }}
+        fsGroup: {{ .Values.podSecurity.gid }}
+        seccompProfile: {type: RuntimeDefault}
+      # MXL shared memory is host-local: every Media Function of a workload must
+      # land on the same host as its Flow Domain peers.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  dmf.ebu.ch/workload: {{ .Values.workload }}
+      containers:
+        - name: function
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          {{- with .Values.command }}
+          command: {{ toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.args }}
+          args: {{ toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - {name: MXL_DOMAIN, value: {{ $domain | quote }}}
+            - {name: WORKLOAD, value: {{ .Values.workload | quote }}}
+            {{- range $k, $v := .Values.env }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+          {{- if .Values.metrics.port }}
+          ports:
+            - {name: metrics, containerPort: {{ .Values.metrics.port }}}
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            periodSeconds: 15
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: mxl-domain, mountPath: {{ $domain }}}
+            - {name: tmp, mountPath: /tmp}
+            {{- if .Values.flowDefs }}
+            - {name: flows, mountPath: /etc/mxl/flows, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: mxl-domain
+          hostPath: {path: {{ $domain }}, type: Directory}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.flowDefs }}
+        - name: flows
+          configMap: {name: {{ .Release.Name }}-flows}
+        {{- end }}

@@ -1,0 +1,12 @@
+# Managed by Ansible. SMPTE ST 2059-2 profile, slave-only media host.
+[global]
+domainNumber            {{ dmf_ptp_domain }}
+slaveOnly               1
+time_stamping           hardware
+network_transport       UDPv4
+delay_mechanism         E2E
+logAnnounceInterval     -2
+announceReceiptTimeout  3
+logSyncInterval         -3
+logMinDelayReqInterval  -3
+summary_interval        6

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: dmf-platform-config
+description: >-
+  Cluster-wide DMF policy and configuration, applied after its CRD providers
+  (cert-manager, Traefik, Prometheus Operator) are installed: local PKI,
+  TLS 1.3 policy, MXL Flow Domain admission guardrails, alert rules and dashboards.
+type: application
+version: 0.1.0

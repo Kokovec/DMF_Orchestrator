@@ -1,0 +1,67 @@
+{
+  "realm": "dmf",
+  "displayName": "Dynamic Media Facility",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "passwordPolicy": "length(12) and notUsername",
+  "eventsEnabled": true,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+  "ssoSessionIdleTimeout": 3600,
+  "ssoSessionMaxLifespan": 43200,
+  "groups": [
+    { "name": "dmf-admins" }
+  ],
+  "clients": [
+    {
+      "clientId": "grafana",
+      "name": "Grafana (DMF monitoring)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${grafana_secret}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://${grafana_host}/login/generic_oauth"],
+      "webOrigins": ["https://${grafana_host}"],
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://${grafana_host}/*" },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "full.path": "true",
+            "claim.name": "groups",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "dmf-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "dmf-admin@dmf.invalid",
+      "firstName": "DMF",
+      "lastName": "Admin",
+      "groups": ["/dmf-admins"],
+      "credentials": [{ "type": "password", "value": "${admin_password}", "temporary": false }]
+    }%{ for name, pw in operators },
+    {
+      "username": "${name}",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "${name}@dmf.invalid",
+      "firstName": "${name}",
+      "lastName": "Operator",
+      "credentials": [{ "type": "password", "value": "${pw}", "temporary": false }]
+    }%{ endfor }
+  ]
+}

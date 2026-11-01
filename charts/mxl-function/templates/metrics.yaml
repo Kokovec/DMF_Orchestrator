@@ -1,0 +1,30 @@
+{{- if .Values.metrics.port }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "mxlfn.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "mxlfn.selector" . | nindent 4 }}
+  ports:
+    - {name: metrics, port: {{ .Values.metrics.port }}, targetPort: metrics}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "mxlfn.labels" . | nindent 4 }}
+    release: dmf-monitoring
+spec:
+  selector:
+    matchLabels:
+      {{- include "mxlfn.selector" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.metrics.interval }}
+{{- end }}
+{{- end }}

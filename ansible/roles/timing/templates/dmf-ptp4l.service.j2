@@ -1,0 +1,12 @@
+[Unit]
+Description=DMF PTP (ST 2059-2) on {{ dmf_ptp_interface }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/sbin/ptp4l -f /etc/linuxptp/ptp4l-dmf.conf -i {{ dmf_ptp_interface }}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

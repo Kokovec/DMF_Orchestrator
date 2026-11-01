@@ -1,0 +1,93 @@
+# One MXL Flow Domain per Media Workload (DMF RA Media Exchange orchestration:
+# PLAN "Plan Flow Domains", PROVISION "Create Flows", FINALISE "delete the
+# shared memory for the Flows and Domains").
+#
+# The domain is its own tmpfs, so:
+#   * its size is a hard reservation (Plan) and cannot starve other workloads;
+#   * uid/gid/mode on the mount give Unix access control (MXL Security);
+#   * unmounting releases every Grain at once (Finalise).
+- name: Resolve Flow Domain parameters
+  ansible.builtin.set_fact:
+    mxl_domain_path: "{{ dmf_mxl_root }}/{{ dmf_workload.spec.mediaExchange.domain }}"
+    mxl_domain_opts: >-
+      size={{ mx.sizeMiB }}m,uid={{ mx.uid }},gid={{ mx.gid }},mode=2770,nosuid,nodev,noexec
+  vars:
+    mx: "{{ dmf_workload.spec.mediaExchange }}"
+
+- name: Create the Flow Domain
+  when: dmf_mxl_state == 'present'
+  block:
+    - name: Check whether the Flow Domain is already mounted
+      ansible.builtin.command: findmnt -n -o FSTYPE --mountpoint {{ mxl_domain_path }}
+      register: mxl_domain_findmnt
+      changed_when: false
+      failed_when: mxl_domain_findmnt.rc not in [0, 1]
+
+    # Only while nothing is mounted: on a live domain this would chown/chmod the
+    # tmpfs root itself and lock the workload out of its own Flow Domain.
+    - name: Create mount point (root-owned, so an unmounted domain is unwritable for workloads)
+      when: mxl_domain_findmnt.rc != 0
+      ansible.builtin.file:
+        path: "{{ mxl_domain_path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # Mount only when absent. A live domain is never remounted: that would drop
+    # every Grain and restart the production. (ansible.posix.mount
+    # state=ephemeral remounts whenever the option text differs, e.g.
+    # size=2048m vs the kernel's size=2097152k.) Resize = finalise + provision.
+    - name: Mount the Flow Domain tmpfs  # noqa: command-instead-of-module  (module remounts live domains)
+      when: mxl_domain_findmnt.rc != 0
+      ansible.builtin.command: >-
+        mount -t tmpfs -o {{ mxl_domain_opts }} tmpfs {{ mxl_domain_path }}
+      register: mxl_domain_mount
+      changed_when: true
+
+    - name: Fail if something other than tmpfs is mounted there
+      when: mxl_domain_findmnt.rc == 0
+      ansible.builtin.assert:
+        that: mxl_domain_findmnt.stdout | trim == 'tmpfs'
+        fail_msg: "{{ mxl_domain_path }} is a {{ mxl_domain_findmnt.stdout | trim }} mount, not the Flow Domain tmpfs"
+        quiet: true
+
+    # The tmpfs root must belong to the workload. This also repairs a domain
+    # whose root was chowned by an earlier version of this role.
+    - name: Workload owns the Flow Domain root
+      ansible.builtin.file:
+        path: "{{ mxl_domain_path }}"
+        state: directory
+        owner: "{{ dmf_workload.spec.mediaExchange.uid }}"
+        group: "{{ dmf_workload.spec.mediaExchange.gid }}"
+        mode: "02770"
+
+    # Pods started before this mount (e.g. after a host reboot) bound the bare,
+    # root-owned mount point and cannot see the tmpfs. PROVISION restarts them.
+    - name: Record whether the Flow Domain was (re)mounted
+      ansible.builtin.set_fact:
+        mxl_domain_remounted: "{{ mxl_domain_mount is changed }}"
+
+    - name: Verify ownership and mode
+      ansible.builtin.stat:
+        path: "{{ mxl_domain_path }}"
+      register: domain_stat
+    - name: Assert domain isolation
+      ansible.builtin.assert:
+        that:
+          - domain_stat.stat.uid == dmf_workload.spec.mediaExchange.uid
+          - domain_stat.stat.gid == dmf_workload.spec.mediaExchange.gid
+          - domain_stat.stat.mode == '2770'
+        quiet: true
+
+- name: Delete the Flow Domain
+  when: dmf_mxl_state == 'absent'
+  block:
+    - name: Unmount the Flow Domain tmpfs (frees all Grains)
+      ansible.posix.mount:
+        path: "{{ mxl_domain_path }}"
+        state: unmounted
+    - name: Remove mount point
+      ansible.builtin.file:
+        path: "{{ mxl_domain_path }}"
+        state: absent

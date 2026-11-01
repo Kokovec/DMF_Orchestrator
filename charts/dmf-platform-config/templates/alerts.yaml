@@ -1,0 +1,66 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dmf-alerts
+  namespace: {{ .Values.monitoringNamespace }}
+  labels:
+    release: dmf-monitoring
+spec:
+  groups:
+    - name: dmf.infrastructure.timing
+      rules:
+        - alert: DMFClockNotSynchronised
+          expr: node_timex_sync_status == 0
+          for: 5m
+          labels: {severity: warning, dmf_layer: infrastructure}
+          annotations:
+            summary: "Host {{`{{ $labels.instance }}`}} clock is not synchronised (PTP/NTP)"
+        - alert: DMFClockOffsetHigh
+          expr: abs(node_timex_offset_seconds) > {{ .Values.alerts.clockOffsetSeconds }}
+          for: 2m
+          labels: {severity: warning, dmf_layer: infrastructure}
+          annotations:
+            summary: "Host {{`{{ $labels.instance }}`}} clock offset {{`{{ $value | humanizeDuration }}`}} exceeds media alignment budget"
+    - name: dmf.media-exchange
+      rules:
+        - alert: DMFFlowInactive
+          expr: dmf_mxl_flow_active == 0
+          for: 1m
+          labels: {severity: critical, dmf_layer: media-exchange}
+          annotations:
+            summary: "MXL flow {{`{{ $labels.flow_id }}`}} in {{`{{ $labels.workload }}`}} has no live writer"
+        - alert: DMFFlowStalled
+          expr: (rate(dmf_mxl_flow_head_index[1m]) == 0) and on(flow_id) (dmf_mxl_flow_active == 1)
+          for: 1m
+          labels: {severity: critical, dmf_layer: media-exchange}
+          annotations:
+            summary: "MXL flow {{`{{ $labels.flow_id }}`}} is active but its head index is not advancing"
+        - alert: DMFNmosRegistrationDown
+          expr: dmf_nmos_registration_up == 0
+          for: 2m
+          labels: {severity: warning, dmf_layer: media-exchange}
+          annotations:
+            summary: "Flows of {{`{{ $labels.workload }}`}} are not registered with the NMOS registry"
+    - name: dmf.media-functions
+      rules:
+        - alert: DMFMediaFunctionUnavailable
+          expr: kube_deployment_status_replicas_available{namespace=~"wl-.*"} == 0
+          for: 1m
+          labels: {severity: critical, dmf_layer: media-functions}
+          annotations:
+            summary: "Media Function {{`{{ $labels.namespace }}/{{ $labels.deployment }}`}} has no available replica"
+        - alert: DMFPipelineErrors
+          expr: increase(switchframe_pipeline_decode_errors_total[5m]) + increase(switchframe_pipeline_encode_errors_total[5m]) > 10
+          labels: {severity: warning, dmf_layer: media-functions}
+          annotations:
+            summary: "SwitchFrame in {{`{{ $labels.namespace }}`}} reports codec errors"
+    - name: dmf.container-platform
+      rules:
+        - alert: DMFWorkloadReservationNearlyExhausted
+          expr: |
+            kube_resourcequota{namespace=~"wl-.*",type="used"}
+              / ignoring(type) kube_resourcequota{namespace=~"wl-.*",type="hard"} > 0.9
+          for: 5m
+          labels: {severity: warning, dmf_layer: container-platform}
+          annotations:
+            summary: "Workload {{`{{ $labels.namespace }}`}} uses >90% of its reserved {{`{{ $labels.resource }}`}}"

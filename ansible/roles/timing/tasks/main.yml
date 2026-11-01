@@ -1,0 +1,87 @@
+# Infrastructure timing reference (DMF RA: "PTP, NTP, SyncE ... precise
+# enough for media essence alignment"). Grains are timestamped at ingress, so
+# every host's system clock must track the facility reference. node-exporter's
+# timex collector feeds the DMFClockNotSynchronised / DMFClockOffsetHigh alerts.
+- name: Report timing mode
+  ansible.builtin.debug:
+    msg: "Timing mode on {{ inventory_hostname }}: {{ dmf_timing_effective }}"
+
+- name: WSL2 clock is disciplined by the Windows host
+  when: dmf_timing_effective == 'host'
+  ansible.builtin.debug:
+    msg: "Skipping PTP/NTP configuration; WSL2 syncs its clock from Windows (Hyper-V time sync)."
+
+# Ubuntu enables systemd-timesyncd by default. Inside WSL it fights Hyper-V
+# time sync whenever Windows' clock differs from NTP time: timesyncd steps the
+# clock towards NTP at every poll (~32 s), Hyper-V pulls it back, and each step
+# (measured: +2.2 to +2.7 s) is seen by MXL grain indexing and SwitchFrame as
+# a multi-second media gap (video freeze, audio dropout).
+- name: Let Hyper-V own the WSL clock (disable systemd-timesyncd)
+  when: dmf_timing_effective == 'host'
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    state: stopped
+    enabled: false
+  failed_when: false   # absent on some images
+
+- name: NTP with chrony
+  when: dmf_timing_effective == 'ntp'
+  block:
+    - name: Install chrony
+      ansible.builtin.apt:
+        name: chrony
+        state: present
+    - name: Configure chrony
+      ansible.builtin.template:
+        src: chrony.conf.j2
+        dest: /etc/chrony/chrony.conf
+        mode: "0644"
+      notify: Restart chrony
+    - name: Enable chrony
+      ansible.builtin.service:
+        name: chrony
+        enabled: true
+        state: started
+
+- name: PTP (SMPTE ST 2059-2 profile) with linuxptp
+  when: dmf_timing_effective == 'ptp'
+  block:
+    - name: Install linuxptp and ethtool
+      ansible.builtin.apt:
+        name: [linuxptp, ethtool]
+        state: present
+    - name: Check hardware timestamping support
+      ansible.builtin.command: "ethtool -T {{ dmf_ptp_interface }}"
+      register: ptp_caps
+      changed_when: false
+    - name: Require a PTP hardware clock
+      ansible.builtin.assert:
+        that: "'PTP Hardware Clock: none' not in ptp_caps.stdout"
+        fail_msg: "{{ dmf_ptp_interface }} has no PTP hardware clock; set dmf_timing_mode: ntp"
+    - name: Stop competing time daemons
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop: [chrony, systemd-timesyncd]
+      failed_when: false
+    - name: Write ptp4l configuration
+      ansible.builtin.template:
+        src: ptp4l-dmf.conf.j2
+        dest: /etc/linuxptp/ptp4l-dmf.conf
+        mode: "0644"
+      notify: Restart ptp
+    - name: Install ptp4l / phc2sys units
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop: [dmf-ptp4l.service, dmf-phc2sys.service]
+      notify: Restart ptp
+    - name: Enable PTP services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop: [dmf-ptp4l.service, dmf-phc2sys.service]

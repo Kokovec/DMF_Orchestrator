@@ -1,0 +1,8 @@
+SwitchFrame Media Function "{{ .Release.Name }}" for workload "{{ .Values.workload }}".
+
+  Operator entry point : https://{{ .Values.ingress.hostname }}/sso/login
+  WebTransport (QUIC)  : udp/{{ .Values.switchframe.quicPort }} on the node / LoadBalancer address
+{{- if .Values.switchframe.srtPort }}
+  SRT listener         : srt://<node>:{{ .Values.switchframe.srtPort }}?mode=caller
+{{- end }}
+  MXL Flow Domain      : {{ .Values.mxl.domainPath }}

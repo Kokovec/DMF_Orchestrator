@@ -1,0 +1,35 @@
+# Optional GPU support (DMF RA: "GPU access ... through generally available
+# extensions"). Needs the NVIDIA driver on the host (or WSL2 GPU passthrough)
+# and a CUDA build of SwitchFrame (upstream Dockerfile.cuda + the MXL stage).
+- name: Add NVIDIA container toolkit repository
+  ansible.builtin.deb822_repository:
+    name: nvidia-container-toolkit
+    types: deb
+    uris: https://nvidia.github.io/libnvidia-container/stable/deb/amd64
+    suites: /
+    signed_by: https://nvidia.github.io/libnvidia-container/gpgkey
+
+- name: Install NVIDIA container toolkit
+  ansible.builtin.apt:
+    name: nvidia-container-toolkit
+    state: present
+    update_cache: true
+  notify: Restart k3s for nvidia
+
+- name: Flush handlers (k3s detects the nvidia runtime at start)
+  ansible.builtin.meta: flush_handlers
+
+- name: RuntimeClass and NVIDIA device plugin
+  when: inventory_hostname in groups['k3s_server']
+  ansible.builtin.shell: |
+    set -euo pipefail
+    k3s kubectl apply -f - <<'YAML'
+    apiVersion: node.k8s.io/v1
+    kind: RuntimeClass
+    metadata: {name: nvidia}
+    handler: nvidia
+    YAML
+    k3s kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.17.4/deployments/static/nvidia-device-plugin.yml
+  args:
+    executable: /bin/bash
+  changed_when: true

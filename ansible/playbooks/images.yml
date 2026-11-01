@@ -1,0 +1,43 @@
+# Media Function images. DMF RA: vendors publish containers through widely
+# adopted repository mechanisms. For a local facility we build them and load
+# them straight into every node's containerd; point dmf_image_registry at a
+# real registry (and skip the import) for a shared facility.
+- name: Build Media Function images on the control node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Build images (first build compiles the MXL SDK + vcpkg deps; expect 30-60 min)
+      ansible.builtin.command:
+        argv: "{{ ['docker', 'build'] + item.args + ['-t', dmf_image_registry ~ '/' ~ item.name ~ ':' ~ dmf_image_tag, item.context] }}"
+      loop:
+        - {name: switchframe, args: [--target, switchframe], context: "{{ dmf_repo_root }}/images/media-functions"}
+        - {name: mxl-tools, args: [--target, mxl-tools], context: "{{ dmf_repo_root }}/images/media-functions"}
+        - {name: sso-bridge, args: [], context: "{{ dmf_repo_root }}/images/sso-bridge"}
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: true
+
+    - name: Export images
+      ansible.builtin.command:
+        argv: "{{ ['docker', 'save', '-o', dmf_state_dir ~ '/images.tar'] + image_refs }}"
+      vars:
+        image_refs: "{{ dmf_images | map('regex_replace', '^(.*)$', dmf_image_registry ~ '/\\1:' ~ dmf_image_tag) | list }}"
+      changed_when: true
+
+- name: Load images into every node's containerd
+  hosts: dmf_cluster
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Copy image archive
+      when: ansible_connection != 'local'
+      ansible.builtin.copy:
+        src: "{{ dmf_state_dir }}/images.tar"
+        dest: /var/tmp/dmf-images.tar
+        mode: "0600"
+    - name: Import into k3s containerd
+      ansible.builtin.command: >-
+        k3s ctr images import
+        {{ (dmf_state_dir ~ '/images.tar') if ansible_connection == 'local' else '/var/tmp/dmf-images.tar' }}
+      changed_when: true

@@ -1,0 +1,81 @@
+# FINALISE & REVIEW (DMF RA lifecycle): record everything in persistent storage,
+# then delete Media Functions, authorisations and reservations, and release
+# the Flow Domain shared memory.
+#   ansible-playbook playbooks/workload-finalise.yml -e workload=news-studio
+- name: Archive and tear down a Media Workload
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    kubectl: "kubectl --kubeconfig {{ dmf_kubeconfig }} -n wl-{{ workload }}"
+    archive: "{{ dmf_state_dir }}/archive/{{ workload }}-{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+  tasks:
+    - name: Read the workload design
+      ansible.builtin.set_fact:
+        dmf_workload: "{{ lookup('ansible.builtin.file', dmf_repo_root ~ '/workloads/' ~ workload ~ '.yaml') | from_yaml }}"
+
+    - name: Create archive directory
+      ansible.builtin.file:
+        path: "{{ archive }}/logs"
+        state: directory
+        mode: "0700"
+
+    - name: List pods
+      ansible.builtin.command: "{{ kubectl }} get pods -o jsonpath={.items[*].metadata.name}"
+      register: pods
+      changed_when: false
+      failed_when: false
+
+    - name: Archive container logs
+      ansible.builtin.shell: "{{ kubectl }} logs {{ item }} --all-containers --timestamps > {{ archive }}/logs/{{ item }}.log 2>&1"
+      loop: "{{ pods.stdout.split() }}"
+      changed_when: true
+      failed_when: false
+
+    - name: Archive SwitchFrame state (presets, macros, operators, SCTE-35 rules, as-run logs)
+      ansible.builtin.shell: >-
+        {{ kubectl }} exec deploy/{{ (dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first).name }}
+        -c switchframe -- tar -C /var/lib/switchframe -czf - . > {{ archive }}/switchframe-state.tgz
+      changed_when: true
+      failed_when: false
+
+    - name: Archive the design and the Kubernetes resources as deployed
+      ansible.builtin.shell: |
+        cp {{ dmf_repo_root }}/workloads/{{ workload }}.yaml {{ archive }}/design.yaml
+        {{ kubectl }} get deploy,svc,ingress,networkpolicy,resourcequota,cm -o yaml > {{ archive }}/resources.yaml
+        {{ kubectl }} get events --sort-by=.lastTimestamp > {{ archive }}/events.txt
+      changed_when: true
+      failed_when: false
+
+    - name: Terraform destroy in workspace {{ workload }}
+      community.general.terraform:
+        project_path: "{{ dmf_terraform_dir }}/workload"
+        workspace: "{{ workload }}"
+        state: absent
+        force_init: true
+        variables:
+          workload_file: "{{ dmf_repo_root }}/workloads/{{ workload }}.yaml"
+          kubeconfig: "{{ dmf_kubeconfig }}"
+          charts_dir: "{{ dmf_repo_root }}/charts"
+          image_tag: "{{ dmf_image_tag }}"
+
+    - name: Remove workload hostname from the control node
+      ansible.builtin.include_role:
+        name: control_node
+      vars:
+        dmf_hosts_state: absent
+        dmf_hostnames: ["{{ dmf_workload.spec.access.hostname }}"]
+
+    - name: Review
+      ansible.builtin.debug:
+        msg: "Workload {{ workload }} finalised. Review material: {{ archive }}"
+
+- name: Media Exchange - delete Flow Domain
+  hosts: dmf_cluster
+  become: true
+  gather_facts: false
+  vars:
+    dmf_workload: "{{ hostvars['localhost'].dmf_workload }}"
+  roles:
+    - role: mxl_domain
+      dmf_mxl_state: absent

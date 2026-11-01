@@ -1,0 +1,28 @@
+# HOST PLATFORM + CONTAINER PLATFORM layers (DMF RA v2.0 Figs. 7 and 10).
+# Infrastructure (hosts + inventory) comes first: `make infra`.
+- name: Host Platform - OS baseline, timing, media exchange prerequisites
+  hosts: dmf_cluster
+  become: true
+  roles:
+    - host_baseline
+    - timing
+    - mxl_host
+
+- name: Container Platform - k3s control plane
+  hosts: k3s_server
+  become: true
+  roles:
+    - k3s
+
+- name: Container Platform - k3s agents
+  hosts: k3s_agent
+  become: true
+  roles:
+    - k3s
+
+- name: Container Platform - GPU extension (optional)
+  hosts: dmf_cluster
+  become: true
+  roles:
+    - role: nvidia
+      when: dmf_enable_gpu | bool

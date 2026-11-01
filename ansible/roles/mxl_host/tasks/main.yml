@@ -1,0 +1,19 @@
+# Media Exchange prerequisites on every host. Per-workload Flow Domains are
+# tmpfs mounts below this root, created and destroyed by the mxl_domain role
+# during the PROVISION / FINALISE lifecycle stages.
+- name: Create the MXL domain root
+  ansible.builtin.file:
+    path: "{{ dmf_mxl_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Describe the layout for operators
+  ansible.builtin.copy:
+    dest: "{{ dmf_mxl_root | dirname }}/README"
+    mode: "0644"
+    content: |
+      {{ dmf_mxl_root }}/<domain>  tmpfs per DMF Media Workload (MXL Flow Domain)
+        owner <workload uid>:<workload gid>, mode 2770, size = mediaExchange.sizeMiB
+      Managed by Ansible (roles/mxl_domain). Do not create domains by hand.

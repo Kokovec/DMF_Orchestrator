@@ -1,0 +1,8 @@
+# Managed by Ansible (DMF timing role)
+{% for s in dmf_ntp_servers %}
+pool {{ s }} iburst maxsources 2
+{% endfor %}
+driftfile /var/lib/chrony/chrony.drift
+makestep 0.1 3
+rtcsync
+leapsectz right/UTC

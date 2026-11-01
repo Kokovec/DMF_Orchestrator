@@ -1,0 +1,31 @@
+{{- if and .Values.ingress.enabled .Values.sso.enabled }}
+{{- $fullname := include "switchframe.fullname" . -}}
+# Browser entry point: https://<hostname>/sso/login
+# TLS terminates at Traefik with a certificate from the platform CA; the
+# platform's default TLSOption enforces TLS 1.3.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.ingress.hostname | quote }}]
+      secretName: {{ $fullname }}-tls
+  rules:
+    - host: {{ .Values.ingress.hostname | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}-gateway
+                port: {name: http}
+{{- end }}

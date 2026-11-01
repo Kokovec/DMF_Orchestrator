@@ -1,0 +1,9 @@
+certManagerNamespace: cert-manager
+ingressControllerNamespace: kube-system
+monitoringNamespace: dmf-monitoring
+mxlRoot: /var/lib/dmf/mxl
+rootCA:
+  commonName: DMF Local Root CA
+  duration: 87600h
+alerts:
+  clockOffsetSeconds: 0.001

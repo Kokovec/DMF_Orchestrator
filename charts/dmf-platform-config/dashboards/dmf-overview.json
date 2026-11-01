@@ -1,0 +1,438 @@
+{
+ "uid": "dmf-overview",
+ "title": "DMF / Media Workloads",
+ "tags": [
+  "dmf",
+  "ebu"
+ ],
+ "schemaVersion": 39,
+ "time": {
+  "from": "now-30m",
+  "to": "now"
+ },
+ "refresh": "10s",
+ "panels": [
+  {
+   "id": 1,
+   "type": "row",
+   "title": "Media Exchange (MXL)",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   }
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Flows present",
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 6,
+    "h": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (workload) (dmf_mxl_domain_flows{workload=~\"$workload\"})",
+     "legendFormat": "{{workload}}"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Flows active",
+   "gridPos": {
+    "x": 6,
+    "y": 1,
+    "w": 6,
+    "h": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (workload) (dmf_mxl_flow_active{workload=~\"$workload\"})",
+     "legendFormat": "{{workload}}"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "NMOS registration",
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 6,
+    "h": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "dmf_nmos_registration_up{workload=~\"$workload\"}",
+     "legendFormat": "{{workload}}"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "Clock offset (worst host)",
+   "gridPos": {
+    "x": 18,
+    "y": 1,
+    "w": 6,
+    "h": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "max(abs(node_timex_offset_seconds))",
+     "legendFormat": "offset"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "type": "timeseries",
+   "title": "Flow throughput (grains or samples / s)",
+   "gridPos": {
+    "x": 0,
+    "y": 7,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(dmf_mxl_flow_head_index{workload=~\"$workload\"}[1m]) * on(flow_id) group_left(label) dmf_mxl_flow_info",
+     "legendFormat": "{{label}}"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "type": "timeseries",
+   "title": "Flow reader latency (grains)",
+   "gridPos": {
+    "x": 12,
+    "y": 7,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "dmf_mxl_flow_latency_grains{workload=~\"$workload\"} * on(flow_id) group_left(label) dmf_mxl_flow_info",
+     "legendFormat": "{{label}}"
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "type": "row",
+   "title": "Media Functions",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 15,
+    "w": 24,
+    "h": 1
+   }
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "Pipeline frames / s",
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (namespace) (rate(switchframe_pipeline_frames_processed_total{namespace=~\"wl-$workload\"}[1m]))",
+     "legendFormat": "{{namespace}}"
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "Codec errors / 5m",
+   "gridPos": {
+    "x": 12,
+    "y": 16,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (namespace) (increase(switchframe_pipeline_decode_errors_total{namespace=~\"wl-$workload\"}[5m]) + increase(switchframe_pipeline_encode_errors_total{namespace=~\"wl-$workload\"}[5m]))",
+     "legendFormat": "{{namespace}}"
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "Cuts and transitions",
+   "gridPos": {
+    "x": 0,
+    "y": 24,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (namespace) (increase(switchframe_cuts_total{namespace=~\"wl-$workload\"}[5m])) or sum by (namespace) (increase(switchframe_transitions_completed_total{namespace=~\"wl-$workload\"}[5m]))",
+     "legendFormat": "{{namespace}}"
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Node duration p99 (pipeline)",
+   "gridPos": {
+    "x": 12,
+    "y": 24,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "histogram_quantile(0.99, sum by (le, namespace) (rate(switchframe_pipeline_node_duration_seconds_bucket{namespace=~\"wl-$workload\"}[5m])))",
+     "legendFormat": "{{namespace}}"
+    }
+   ]
+  },
+  {
+   "id": 13,
+   "type": "row",
+   "title": "Container Platform: workload reservation",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 32,
+    "w": 24,
+    "h": 1
+   }
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "CPU used vs reserved",
+   "gridPos": {
+    "x": 0,
+    "y": 33,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~\"wl-$workload\",container!=\"\"}[2m])) / on(namespace) kube_resourcequota{namespace=~\"wl-$workload\",resource=\"limits.cpu\",type=\"hard\"}",
+     "legendFormat": "{{namespace}}"
+    }
+   ]
+  },
+  {
+   "id": 15,
+   "type": "timeseries",
+   "title": "Memory used vs reserved",
+   "gridPos": {
+    "x": 12,
+    "y": 33,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (namespace) (container_memory_working_set_bytes{namespace=~\"wl-$workload\",container!=\"\"}) / on(namespace) kube_resourcequota{namespace=~\"wl-$workload\",resource=\"limits.memory\",type=\"hard\"}",
+     "legendFormat": "{{namespace}}"
+    }
+   ]
+  },
+  {
+   "id": 16,
+   "type": "timeseries",
+   "title": "Estimated power (Kepler, if enabled)",
+   "gridPos": {
+    "x": 0,
+    "y": 41,
+    "w": 24,
+    "h": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "watt"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (container_namespace) (rate(kepler_container_joules_total{container_namespace=~\"wl-$workload\"}[2m]))",
+     "legendFormat": "{{container_namespace}}"
+    }
+   ]
+  }
+ ],
+ "templating": {
+  "list": [
+   {
+    "name": "datasource",
+    "type": "datasource",
+    "query": "prometheus"
+   },
+   {
+    "name": "workload",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "${datasource}"
+    },
+    "query": "label_values(dmf_mxl_domain_flows, workload)",
+    "includeAll": true,
+    "multi": true,
+    "allValue": ".*",
+    "refresh": 2
+   }
+  ]
+ }
+}

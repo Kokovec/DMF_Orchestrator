@@ -1,0 +1,11 @@
+- name: Restart chrony
+  ansible.builtin.service:
+    name: chrony
+    state: restarted
+
+- name: Restart ptp
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: restarted
+    daemon_reload: true
+  loop: [dmf-ptp4l.service, dmf-phc2sys.service]

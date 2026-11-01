@@ -1,0 +1,33 @@
+# Local PKI: self-signed bootstrap issuer -> root CA -> "dmf-ca" ClusterIssuer.
+# Export the root for browsers with `make trust-ca`.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: dmf-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dmf-root-ca
+  namespace: {{ .Values.certManagerNamespace }}
+spec:
+  isCA: true
+  commonName: {{ .Values.rootCA.commonName | quote }}
+  secretName: dmf-root-ca
+  duration: {{ .Values.rootCA.duration }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: dmf-selfsigned
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: dmf-ca
+spec:
+  ca:
+    secretName: dmf-root-ca

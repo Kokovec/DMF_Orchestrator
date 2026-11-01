@@ -1,0 +1,11 @@
+{
+  "folders": [
+    { "name": "SwitchFrame_Add_Ons", "path": "." }
+  ],
+  "remoteAuthority": "wsl+Ubuntu",
+  "settings": {
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "files.eol": "\n"
+  }
+}

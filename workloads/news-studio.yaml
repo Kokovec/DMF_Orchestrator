@@ -1,0 +1,69 @@
+# DMF Media Workload definition: the output of the DESIGN lifecycle stage.
+#
+# This is the one source of truth for a production. Ansible reads it to reserve
+# and create the MXL Flow Domain on the hosts; Terraform reads it to create the
+# namespace, quotas, identity groups and Media Functions.
+#
+# Lifecycle (EBU DMF RA v2.0 Fig. 1), driven by the Makefile:
+#   make plan      WORKLOAD=news-studio   # validate + capacity check + terraform plan
+#   make provision WORKLOAD=news-studio   # reserve the flow domain, launch Media Functions, connect flows
+#   make status    WORKLOAD=news-studio   # monitor
+#   make finalise  WORKLOAD=news-studio   # archive logs and state, tear down, release resources
+apiVersion: dmf.local/v1alpha1
+kind: MediaWorkload
+metadata:
+  name: news-studio
+  description: Two-camera news studio (reduced form of DMF RA Annex B, Fig. B1)
+
+spec:
+  # Resource profile (Design / Plan). This becomes a ResourceQuota on the
+  # workload namespace, so the cluster cannot oversubscribe the reservation.
+  resourceProfile:
+    cpu: "7"
+    memory: 10Gi
+    gpu: 0              # >0 requires the nvidia role + Dockerfile.cuda-based image
+
+  # Media Exchange layer: one MXL Flow Domain per workload.
+  # Ansible mounts a dedicated tmpfs of sizeMiB at /var/lib/dmf/mxl/<domain>,
+  # owned by uid/gid with mode 2770. Only this workload's Media Functions run
+  # with that uid/gid, so the domain is isolated with Unix file-system access
+  # controls (DMF RA "MXL Security").
+  mediaExchange:
+    domain: news-studio
+    uid: 20001
+    gid: 20001
+    sizeMiB: 2048
+
+  # Application & UI access.
+  access:
+    # Resolved via /etc/hosts (Ansible). Not *.localhost: browsers try [::1]
+    # first for those, and WebTransport does not fall back to 127.0.0.1.
+    hostname: news-studio.dmf.test
+    quicPort: 8443                        # UDP+TCP, WebTransport/HTTP3 directly to SwitchFrame
+    srtPort: 6464                         # UDP, SRT contribution input (listener)
+    # Keycloak users added to /<workload>/<role> groups. Roles map 1:1 to
+    # SwitchFrame operator roles (director, audio, graphics, captioner, viewer).
+    members:
+      director: [director1]
+      audio: [audio1]
+      viewer: [viewer1]
+
+  # Media Functions. Every function is its own container (Pod) and exchanges
+  # media only through the MXL Flow Domain above.
+  functions:
+    - name: cam1
+      kind: mxl-testsrc          # Input Media Function (stands in for a camera ingest)
+      pattern: smpte
+      label: "Camera 1"
+    - name: cam2
+      kind: mxl-testsrc
+      pattern: ball
+      label: "Camera 2"
+    - name: vision-mixer
+      kind: switchframe          # Processing Media Function (switching, audio mix, keying, graphics)
+      format: 1080p29.97
+      sources: [cam1, cam2]      # initial connections, made during CONFIGURE
+      programOutput: true        # writes program V210 + float32 audio back to the domain
+      extraArgs:
+        - --preview-proxy
+        - --frame-sync

@@ -1,0 +1,5 @@
+dmf_base_domain: dmf.test
+dmf_ingress_address: 127.0.0.1
+# Hostnames to resolve to the ingress address on the control node.
+dmf_hostnames: []
+dmf_hosts_state: present

@@ -1,0 +1,3 @@
+# Variables shared across roles intentionally use one facility-wide "dmf_" prefix.
+skip_list:
+  - var-naming[no-role-prefix]

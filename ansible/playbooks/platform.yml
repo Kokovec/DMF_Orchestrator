@@ -1,0 +1,46 @@
+# Cluster services shared by all Media Workloads: PKI, monitoring, identity,
+# NMOS registry, admission guardrails (Terraform stack "platform").
+- name: Deploy DMF platform services
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    platform_dir: "{{ dmf_terraform_dir }}/platform"
+  tasks:
+    - name: Resolve platform hostnames on the control node
+      ansible.builtin.include_role:
+        name: control_node
+      vars:
+        dmf_hostnames:
+          - "keycloak.{{ dmf_base_domain | default('dmf.test') }}"
+          - "grafana.{{ dmf_base_domain | default('dmf.test') }}"
+
+    - name: Terraform apply (platform)
+      community.general.terraform:
+        project_path: "{{ platform_dir }}"
+        state: present
+        force_init: true
+        variables:
+          kubeconfig: "{{ dmf_kubeconfig }}"
+          base_domain: "{{ dmf_base_domain | default('dmf.test') }}"
+          charts_dir: "{{ dmf_repo_root }}/charts"
+      register: platform
+
+    - name: Wait for Keycloak (realm import on first start takes a while)
+      ansible.builtin.command: >-
+        kubectl --kubeconfig {{ dmf_kubeconfig }} -n dmf-identity
+        rollout status deploy/keycloak --timeout=600s
+      changed_when: false
+
+    - name: Export the root CA for browsers
+      ansible.builtin.copy:
+        dest: "{{ dmf_state_dir }}/dmf-root-ca.crt"
+        content: "{{ platform.outputs.root_ca_pem.value }}"
+        mode: "0644"
+
+    - name: Platform endpoints
+      ansible.builtin.debug:
+        msg:
+          - "Keycloak admin : {{ platform.outputs.keycloak.value.admin_url }}  (user admin, `make secrets`)"
+          - "Grafana        : https://grafana.{{ dmf_base_domain | default('dmf.test') }}  (DMF SSO)"
+          - "Root CA        : {{ dmf_state_dir }}/dmf-root-ca.crt  (`make trust-ca`)"

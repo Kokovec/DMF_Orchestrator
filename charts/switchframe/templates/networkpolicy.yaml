@@ -1,0 +1,85 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy -}}
+# Zero-trust segmentation. The workload namespace is default-deny (created by
+# Terraform); these policies open only the paths this Media Function needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "switchframe.fullname" . }}
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "switchframe.selector" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Media plane: browsers (WebTransport) and SRT contribution, from anywhere.
+    - ports:
+        - {port: {{ .Values.switchframe.quicPort }}, protocol: UDP}
+        {{- if .Values.switchframe.srtPort }}
+        - {port: {{ .Values.switchframe.srtPort }}, protocol: UDP}
+        {{- end }}
+    # Control plane: only through the SSO gateway.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "switchframe.gatewaySelector" . | nindent 14 }}
+      ports:
+        - {port: {{ .Values.switchframe.httpPort }}, protocol: TCP}
+    # Monitoring: Prometheus scrape (bearer-token protected) and kubelet probes.
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $np.monitoringNamespace }}}
+      ports:
+        - {port: {{ .Values.switchframe.adminPort }}, protocol: TCP}
+  egress:
+    - ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    # SRT outputs / callers and SCTE-35 webhooks go to external networks only.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.42.0.0/16, 10.43.0.0/16]
+{{- if .Values.sso.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "switchframe.fullname" . }}-gateway
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "switchframe.gatewaySelector" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace }}}
+      ports:
+        - {port: 4180, protocol: TCP}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $np.monitoringNamespace }}}
+      ports:
+        - {port: 44180, protocol: TCP}
+  egress:
+    - ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "switchframe.selector" . | nindent 14 }}
+      ports:
+        - {port: {{ .Values.switchframe.httpPort }}, protocol: TCP}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $np.identityNamespace }}}
+      ports:
+        - {port: 8080, protocol: TCP}
+{{- end }}
+{{- end }}

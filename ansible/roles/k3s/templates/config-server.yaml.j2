@@ -1,0 +1,16 @@
+# Managed by Ansible (DMF k3s role)
+write-kubeconfig-mode: "0600"
+secrets-encryption: true
+tls-san:
+  - "{{ ansible_host }}"
+node-label:
+  - "dmf.ebu.ch/media-host=true"
+kube-apiserver-arg:
+  - "tls-min-version=VersionTLS13"
+  - "audit-policy-file=/etc/rancher/k3s/audit-policy.yaml"
+  - "audit-log-path=/var/log/k3s/audit.log"
+  - "audit-log-maxage=30"
+  - "audit-log-maxbackup=10"
+  - "audit-log-maxsize=100"
+kubelet-arg:
+  - "max-pods=150"

@@ -1,0 +1,75 @@
+# Container Platform: k3s (CNCF-conformant Kubernetes) with Traefik ingress,
+# ServiceLB, local-path storage and the embedded NetworkPolicy controller.
+- name: Create k3s config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop: [/etc/rancher/k3s, /var/log/k3s]
+
+- name: Kubernetes API audit policy (Accounting)
+  when: dmf_k3s_role == 'server'
+  ansible.builtin.copy:
+    src: audit-policy.yaml
+    dest: /etc/rancher/k3s/audit-policy.yaml
+    mode: "0600"
+  notify: Restart k3s
+
+- name: Write k3s configuration
+  ansible.builtin.template:
+    src: "config-{{ dmf_k3s_role }}.yaml.j2"
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0600"
+  notify: Restart k3s
+
+- name: Read installed k3s version
+  ansible.builtin.command: k3s --version
+  register: k3s_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download the k3s installer
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /usr/local/bin/k3s-install.sh
+    mode: "0755"
+
+- name: Join token from the server
+  when: dmf_k3s_role == 'agent'
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  delegate_to: "{{ dmf_k3s_server }}"
+  register: k3s_token
+
+- name: Install k3s {{ dmf_k3s_version }}
+  when: dmf_k3s_version not in (k3s_installed.stdout | default(''))
+  ansible.builtin.command: /usr/local/bin/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ dmf_k3s_version }}"
+    INSTALL_K3S_EXEC: "{{ dmf_k3s_role }}"
+    K3S_URL: "{{ ('https://' ~ dmf_k3s_api_address ~ ':6443') if dmf_k3s_role == 'agent' else '' }}"
+    K3S_TOKEN: "{{ (k3s_token.content | b64decode | trim) if dmf_k3s_role == 'agent' else '' }}"
+  changed_when: true
+
+- name: Flush handlers (apply config changes before waiting)
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for all nodes to be Ready
+  when: dmf_k3s_role == 'server'
+  ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=300s
+  changed_when: false
+
+- name: Read admin kubeconfig
+  when: dmf_k3s_role == 'server'
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  register: k3s_kubeconfig
+
+- name: Write kubeconfig for Terraform/kubectl on the control node
+  when: dmf_k3s_role == 'server'
+  delegate_to: localhost
+  become: false
+  ansible.builtin.copy:
+    dest: "{{ dmf_kubeconfig }}"
+    mode: "0600"
+    content: "{{ k3s_kubeconfig.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ dmf_k3s_api_address ~ ':6443') }}"

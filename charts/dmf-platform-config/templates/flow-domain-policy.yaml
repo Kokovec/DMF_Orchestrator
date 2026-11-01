@@ -1,0 +1,67 @@
+# Media Exchange security (DMF RA: "Enforce access to Flow Domains").
+#
+# Workload namespaces need hostPath for their MXL Flow Domain, which Pod
+# Security "baseline"/"restricted" forbid outright. They therefore run PSA
+# "privileged" (warn/audit "restricted"), and this policy puts the restricted
+# guardrails back, plus domain isolation:
+#   * the only hostPath allowed is the namespace's own Flow Domain;
+#   * pods that mount it must run as the workload uid/gid that owns it;
+#   * no privileged containers, privilege escalation or host namespaces.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: dmf-media-workload-guardrails
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: labels
+      expression: "has(namespaceObject.metadata.labels) ? namespaceObject.metadata.labels : {}"
+    - name: domainPath
+      expression: "'{{ .Values.mxlRoot }}/' + ('dmf.ebu.ch/flow-domain' in variables.labels ? variables.labels['dmf.ebu.ch/flow-domain'] : '__none__')"
+    - name: workloadId
+      expression: "'dmf.ebu.ch/uid' in variables.labels ? int(variables.labels['dmf.ebu.ch/uid']) : -1"
+    - name: containers
+      expression: "object.spec.containers + (has(object.spec.initContainers) ? object.spec.initContainers : [])"
+    - name: mountsDomain
+      expression: "has(object.spec.volumes) && object.spec.volumes.exists(v, has(v.hostPath))"
+  validations:
+    - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath) || v.hostPath.path == variables.domainPath)"
+      messageExpression: "'hostPath volumes are limited to this workload\\'s MXL Flow Domain ' + variables.domainPath"
+    - expression: >-
+        !variables.mountsDomain ||
+        (has(object.spec.securityContext) &&
+         has(object.spec.securityContext.runAsUser) && object.spec.securityContext.runAsUser == variables.workloadId &&
+         has(object.spec.securityContext.runAsGroup) && object.spec.securityContext.runAsGroup == variables.workloadId &&
+         variables.containers.all(c, !has(c.securityContext) ||
+           ((!has(c.securityContext.runAsUser) || c.securityContext.runAsUser == variables.workloadId) &&
+            (!has(c.securityContext.runAsGroup) || c.securityContext.runAsGroup == variables.workloadId))))
+      message: "pods mounting the MXL Flow Domain must run as the workload uid/gid (dmf.ebu.ch/uid)"
+    - expression: >-
+        !(has(object.spec.hostNetwork) && object.spec.hostNetwork) &&
+        !(has(object.spec.hostPID) && object.spec.hostPID) &&
+        !(has(object.spec.hostIPC) && object.spec.hostIPC)
+      message: "host namespaces are not allowed in media workloads"
+    - expression: "variables.containers.all(c, !has(c.securityContext) || !has(c.securityContext.privileged) || !c.securityContext.privileged)"
+      message: "privileged containers are not allowed in media workloads"
+    - expression: "variables.containers.all(c, has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation) && !c.securityContext.allowPrivilegeEscalation)"
+      message: "containers must set allowPrivilegeEscalation: false"
+    - expression: "variables.containers.all(c, !has(c.securityContext) || !has(c.securityContext.capabilities) || !has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0)"
+      message: "adding Linux capabilities is not allowed in media workloads"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: dmf-media-workload-guardrails
+spec:
+  policyName: dmf-media-workload-guardrails
+  validationActions: [Deny, Audit]
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - {key: dmf.ebu.ch/workload, operator: Exists}

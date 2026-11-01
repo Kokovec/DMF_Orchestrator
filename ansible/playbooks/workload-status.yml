@@ -1,0 +1,33 @@
+# MONITOR (DMF RA lifecycle, applies throughout): one-shot status of a workload
+# across layers. Continuous monitoring is Prometheus/Grafana/Alertmanager.
+- name: Status of a Media Workload
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    kubectl: "kubectl --kubeconfig {{ dmf_kubeconfig }} -n wl-{{ workload }}"
+  tasks:
+    - name: Container Platform - pods
+      ansible.builtin.command: "{{ kubectl }} get pods -o wide"
+      register: pods
+      changed_when: false
+
+    - name: Container Platform - reservation usage
+      ansible.builtin.command: "{{ kubectl }} describe resourcequota dmf-reservation"
+      register: quota
+      changed_when: false
+
+    - name: Media Exchange - flow status
+      ansible.builtin.command: >-
+        {{ kubectl }} exec deploy/mxl-flow-agent --
+        python3 -I -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:9102/metrics').read().decode())"
+      register: flows
+      changed_when: false
+      failed_when: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg:
+          pods: "{{ pods.stdout_lines }}"
+          reservation: "{{ quota.stdout_lines | select('search', 'requests') | list }}"
+          flows: "{{ flows.stdout_lines | default([]) | select('match', '^dmf_') | list }}"

@@ -1,0 +1,24 @@
+# Resolve facility hostnames on the machine that runs Terraform/kubectl.
+# Browsers, CLI tools and the Keycloak Terraform provider need /etc/hosts.
+
+# WSL rewrites /etc/hosts at every boot unless told not to, which would drop
+# these entries (and break provisioning) after each WSL restart.
+- name: Keep /etc/hosts across WSL restarts
+  when: "'microsoft' in (lookup('ansible.builtin.file', '/proc/version', errors='ignore') | default('') | lower)"
+  become: true
+  community.general.ini_file:
+    path: /etc/wsl.conf
+    section: network
+    option: generateHosts
+    value: "false"
+    no_extra_spaces: false
+    mode: "0644"
+
+- name: Manage /etc/hosts entries for DMF hostnames
+  become: true
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} DMF {{ item }}"
+    block: "{{ dmf_ingress_address }} {{ item }}"
+    state: "{{ dmf_hosts_state }}"
+  loop: "{{ dmf_hostnames }}"

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dmf-dashboards
+  namespace: {{ .Values.monitoringNamespace }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  {{- (.Files.Glob "dashboards/*.json").AsConfig | nindent 2 }}
