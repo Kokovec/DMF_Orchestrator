@@ -61,7 +61,7 @@ Later steps run a check for a known WSL DNS problem. If it stops you, it prints 
 ### 2. Get the code and tools
 
 ```bash
-git clone <repository URL> switchframe-dmf
+git clone https://github.com/Kokovec/switchframe-dmf.git
 cd switchframe-dmf
 make prereqs                      # terraform, kubectl, helm, ansible into ./.tools (no sudo)
 ```
@@ -253,3 +253,7 @@ Three more patches fix timing defects found with the `sync` source (`mxl-syncsrc
 | Remove platform and infrastructure | `make finalise` each workload, then `make destroy` |
 
 Pinned versions: SwitchFrame `792361540f14` (thiagopnts fork), MXL SDK `v1.1.0`, k3s `v1.36.5+k3s1`, cert-manager `v1.21.3`, kube-prometheus-stack `92.17.0`, Keycloak `26.8.1`, oauth2-proxy `v7.15.5`. Change them in `images/media-functions/Dockerfile`, `ansible/playbooks/group_vars/all.yml` and `terraform/stacks/platform/variables.tf`.
+
+## Licence
+
+This package is released under the [MIT License](LICENSE). The images it builds download and compile third-party software that keeps its own licence, including [SwitchFrame](https://github.com/thiagopnts/switchframe) and [MXL](https://github.com/dmf-mxl/mxl). The scripts in `images/media-functions/patches/` modify that software at build time, and those changes apply under the licence of the code they modify.
