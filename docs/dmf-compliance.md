@@ -83,7 +83,7 @@ Status key: **Met**: implemented as the RA describes. **Partial**: implemented w
 | External interfaces: ST 2110 / SRT / etc. | SRT listener (UDP `srtPort`). SwitchFrame's ST 2110/DPDK path is not enabled (needs DPDK NICs) | Partial |
 | Timestamp at ingress (JT-NM / MS-04 timing model) | MXL grains are indexed by wall-clock time; SwitchFrame derives a shared A/V epoch, not per-grain origin timestamps | Partial |
 | Delivered through registries and Helm charts | OCI images + Helm charts (`charts/switchframe`, `charts/mxl-function`) | Met |
-| Version pinning | SwitchFrame commit, MXL tag, Go, k3s, charts and images are all pinned | Met |
+| Version pinning | SwitchFrame and MXL commits (from forks), base images by digest, Go, k3s and charts are pinned. Ubuntu packages and the vcpkg tool checkout are not, so builds are not fully reproducible | Partial |
 | Licence management | Open-source functions (MIT / Apache-2.0); no licence server | N/A |
 | Control/monitoring via open APIs | SwitchFrame REST + Prometheus; NMOS IS-04 resource model for flows | Met |
 | Control/monitoring traffic TLS 1.3, clients OAuth2/JWT-authorised | Browser edge: TLS 1.3 (Traefik TLSOption) + Keycloak OIDC with PKCE. QUIC/WebTransport is TLS 1.3. East-west hops (gateway → SwitchFrame, Prometheus scrapes, OIDC back-channel) are plain HTTP inside NetworkPolicy-restricted paths | Partial |

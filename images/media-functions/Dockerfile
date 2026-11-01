@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # DMF Media Function images, built from pinned upstream sources.
 #
@@ -12,10 +12,15 @@
 #   docker build --target switchframe -t dmf.local/switchframe:<tag> images/media-functions
 #   docker build --target mxl-tools   -t dmf.local/mxl-tools:<tag>   images/media-functions
 
-ARG BASE_IMAGE=ubuntu:24.04
-ARG MXL_REPO=https://github.com/dmf-mxl/mxl.git
-ARG MXL_REF=v1.1.0
-ARG SWITCHFRAME_REPO=https://github.com/thiagopnts/switchframe.git
+# Upstream sources come from forks, pinned to commits (tagged dmf-base-* in the
+# forks), and base images are pinned by digest. Forks: github.com/dmf-mxl/mxl and
+# github.com/thiagopnts/switchframe. Not pinned: apt packages and vcpkg's own tool
+# checkout (the MXL manifest's builtin-baseline sets its package versions).
+ARG BASE_IMAGE=ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+ARG MXL_REPO=https://github.com/Kokovec/mxl.git
+ARG MXL_VERSION=v1.1.0
+ARG MXL_REF=8f3f1096e804bfb822eb959cdf2fc23199a7d15d
+ARG SWITCHFRAME_REPO=https://github.com/Kokovec/switchframe.git
 ARG SWITCHFRAME_REF=792361540f148b9ec8a93ec7727919672bd2330d
 ARG GO_VERSION=1.25.0
 
@@ -36,7 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # vcpkg needs full history to resolve the manifest's builtin-baseline.
 RUN git clone https://github.com/microsoft/vcpkg.git ${VCPKG_ROOT} \
     && ${VCPKG_ROOT}/bootstrap-vcpkg.sh -disableMetrics
-RUN git clone --depth 1 --branch ${MXL_REF} ${MXL_REPO} /src/mxl
+RUN git clone ${MXL_REPO} /src/mxl \
+    && git -C /src/mxl checkout --detach ${MXL_REF}
 WORKDIR /src/mxl
 RUN cmake --preset Linux-GCC-Release \
         -DCMAKE_INSTALL_PREFIX=/opt/mxl \
@@ -49,7 +55,7 @@ ENV LD_LIBRARY_PATH=/opt/mxl/lib
 # ----------------------------------------------------------------------------
 # SwitchFrame UI (SvelteKit), embedded into the Go binary
 # ----------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS ui
+FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS ui
 ARG SWITCHFRAME_REPO
 ARG SWITCHFRAME_REF
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
@@ -152,11 +158,11 @@ ENTRYPOINT ["/usr/local/bin/switchframe"]
 # Runtime: MXL tools + flow agent
 # ----------------------------------------------------------------------------
 FROM ${BASE_IMAGE} AS mxl-tools
-ARG MXL_REF
+ARG MXL_VERSION
 LABEL org.opencontainers.image.title="mxl-tools" \
       org.opencontainers.image.description="MXL SDK tools and DMF flow agent (NMOS IS-04 registration, flow monitoring)" \
       org.opencontainers.image.source="https://github.com/dmf-mxl/mxl" \
-      org.opencontainers.image.version="${MXL_REF}" \
+      org.opencontainers.image.version="${MXL_VERSION}" \
       org.opencontainers.image.licenses="Apache-2.0"
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates python3 librdmacm1 fonts-dejavu-core \
