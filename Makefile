@@ -22,7 +22,7 @@ BECOME       ?= --ask-become-pass
 SKIP_PREFLIGHT ?=
 PREFLIGHT    := $(if $(SKIP_PREFLIGHT),true,scripts/preflight.sh)
 
-.PHONY: help prereqs infra hosts images platform plan provision status finalise up destroy windows-browser \
+.PHONY: help prereqs infra hosts images platform plan provision status start stop finalise up destroy windows-browser \
         trust-ca secrets nmos-query lint validate clean
 
 help:
@@ -54,6 +54,12 @@ provision: ## PROVISION + CONFIGURE: Flow Domain, Media Functions, connections
 
 status: ## MONITOR: one-shot status across layers
 	$(PLAYBOOK) playbooks/workload-status.yml -e workload=$(WORKLOAD)
+
+start: ## Start the facility, wait for WORKLOAD and open Chrome (WSL; NO_BROWSER=1 skips it)
+	@scripts/facility.sh start $(WORKLOAD)
+
+stop: ## Stop the facility and release its memory, leaving WSL free for other work
+	@scripts/facility.sh stop $(WORKLOAD)
 
 finalise: ## FINALISE & REVIEW: archive, tear down, release Flow Domain
 	$(PLAYBOOK) playbooks/workload-finalise.yml -e workload=$(WORKLOAD) $(BECOME)

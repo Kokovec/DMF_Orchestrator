@@ -44,6 +44,17 @@
           - "keycloak.{{ dmf_base_domain | default('dmf.test') }}"
           - "grafana.{{ dmf_base_domain | default('dmf.test') }}"
 
+    # Terraform logs in to Keycloak to manage the workload's client. Straight
+    # after k3s starts, Keycloak needs a minute or two.
+    - name: Wait for Keycloak
+      ansible.builtin.uri:
+        url: "https://keycloak.{{ dmf_base_domain | default('dmf.test') }}/realms/master/.well-known/openid-configuration"
+        validate_certs: false
+      register: keycloak_ready
+      retries: 60
+      delay: 5
+      until: keycloak_ready.status == 200
+
     - name: Terraform apply in workspace {{ workload }}
       community.general.terraform:
         project_path: "{{ dmf_terraform_dir }}/workload"

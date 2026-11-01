@@ -43,21 +43,23 @@
       changed_when: true
 
 # Tags stay fixed, so PROVISION cannot tell a rebuilt image from the running one.
-# Record what was just loaded; the charts put each image id in a pod annotation,
-# so PROVISION rolls exactly the Media Functions whose image changed.
+# Record what was just loaded; the charts put each image's identity in a pod
+# annotation, so PROVISION rolls exactly the Media Functions whose image changed.
+# Identity is a hash of the content layers: with Docker's containerd image store
+# the image id changes on every build, even when nothing in the image did.
 - name: Record the image ids loaded into the cluster
   hosts: localhost
   connection: local
   gather_facts: false
   tasks:
-    - name: Read image ids
+    - name: Read image content layers
       ansible.builtin.command:
-        argv: [docker, image, inspect, --format, "{{ '{{.Id}}' }}", "{{ dmf_image_registry }}/{{ item }}:{{ dmf_image_tag }}"]
+        argv: [docker, image, inspect, --format, "{{ '{{json .RootFS.Layers}}' }}", "{{ dmf_image_registry }}/{{ item }}:{{ dmf_image_tag }}"]
       loop: "{{ dmf_images }}"
       register: image_inspect
       changed_when: false
-    - name: Write image ids for PROVISION
+    - name: Write image identities for PROVISION
       ansible.builtin.copy:
         dest: "{{ dmf_state_dir }}/image-ids.json"
         mode: "0644"
-        content: "{{ dict(dmf_images | zip(image_inspect.results | map(attribute='stdout'))) | to_nice_json }}\n"
+        content: "{{ dict(dmf_images | zip(image_inspect.results | map(attribute='stdout') | map('hash', 'sha256'))) | to_nice_json }}\n"

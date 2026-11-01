@@ -51,6 +51,12 @@
     K3S_TOKEN: "{{ (k3s_token.content | b64decode | trim) if dmf_k3s_role == 'agent' else '' }}"
   changed_when: true
 
+- name: Start k3s now; start it with the host only where dmf_k3s_autostart is set
+  ansible.builtin.systemd_service:
+    name: "{{ 'k3s' if dmf_k3s_role == 'server' else 'k3s-agent' }}"
+    state: started
+    enabled: "{{ dmf_k3s_autostart | bool }}"
+
 - name: Flush handlers (apply config changes before waiting)
   ansible.builtin.meta: flush_handlers
 

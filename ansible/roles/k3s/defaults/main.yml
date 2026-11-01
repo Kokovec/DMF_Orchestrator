@@ -1,3 +1,6 @@
+# Start k3s with the host. Off on WSL, where the machine is shared with other
+# work and the facility runs on demand (make start / make stop).
+dmf_k3s_autostart: "{{ not dmf_is_wsl }}"
 dmf_k3s_role: "{{ 'server' if inventory_hostname in groups['k3s_server'] else 'agent' }}"
 dmf_k3s_server: "{{ groups['k3s_server'][0] }}"
 dmf_k3s_api_address: "{{ hostvars[dmf_k3s_server].ansible_host }}"

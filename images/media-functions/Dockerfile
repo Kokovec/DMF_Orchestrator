@@ -90,11 +90,15 @@ RUN python3 /patches/mxl-writer-phase.py /src/switchframe/server
 # Fixed, short mixer input latency (narrow drift band, fast resync when far
 # above target) instead of anywhere in 1-3 frames plus minutes-long drains.
 RUN python3 /patches/mixer-audio-latency.py /src/switchframe/server
+# Programme video timestamps jump to wall clock after time on a built-in source,
+# instead of leaving picture and sound apart for twice that long.
+RUN python3 /patches/programme-pts-resync.py /src/switchframe/server
 RUN rm -f /src/switchframe/server/cmd/switchframe/ui \
     && cp -r /src/switchframe/ui/build /src/switchframe/server/cmd/switchframe/ui
 WORKDIR /src/switchframe/server
 RUN go mod download \
-    && go test -count=1 ./mxl/ ./audio/
+    && go test -count=1 ./mxl/ ./audio/ \
+    && go test -count=1 -run "WallClock" ./switcher/
 # Prism (MoQ distribution) rounds audio timestamps to 11.1 ms, which makes
 # browser audio crackle; build against a patched copy (see the script header).
 RUN PRISM_DIR=$(go list -m -f '{{.Dir}}' github.com/zsiec/prism) \

@@ -2,8 +2,8 @@
 # PLAN "Plan Flow Domains", PROVISION "Create Flows", FINALISE "delete the
 # shared memory for the Flows and Domains").
 #
-# The domain is its own tmpfs, mounted by a systemd unit so it returns after a
-# host restart, so:
+# The domain is its own tmpfs, mounted by a systemd unit that k3s pulls in, so
+# it returns whenever k3s starts, and:
 #   * its size is a hard reservation (Plan) and cannot starve other workloads;
 #   * uid/gid/mode on the mount give Unix access control (MXL Security);
 #   * unmounting releases every Grain at once (Finalise).
@@ -40,8 +40,9 @@
         group: root
         mode: "0755"
 
-    # A tmpfs does not survive a host restart. A systemd mount unit brings the
-    # domain back before k3s starts, so pods never bind the bare mount point.
+    # A tmpfs does not survive a host restart. This unit mounts the domain, and
+    # the drop-ins below make k3s start it first, so it comes back with k3s
+    # (at boot or on make start) and pods never bind the bare mount point.
     - name: Install the Flow Domain mount unit
       ansible.builtin.copy:
         dest: "/etc/systemd/system/{{ mxl_domain_unit.stdout }}"
@@ -57,17 +58,36 @@
           Type=tmpfs
           Options={{ mxl_domain_opts | trim }}
 
-          [Install]
-          WantedBy=local-fs.target
+    # Removes the boot-time link from an earlier version of this role.
+    - name: Do not mount the Flow Domain independently of k3s
+      ansible.builtin.file:
+        path: "/etc/systemd/system/local-fs.target.wants/{{ mxl_domain_unit.stdout }}"
+        state: absent
 
-    # Enable only. A live domain is never remounted: that would drop every Grain
-    # and restart the production. Systemd adopts an existing mount as this unit's
-    # active state. Changed options apply at the next restart; to resize now,
-    # finalise + provision.
-    - name: Enable the Flow Domain mount unit
+    - name: Create k3s drop-in directories
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item }}.service.d"
+        state: directory
+        mode: "0755"
+      loop: [k3s, k3s-agent]
+
+    # Wants, not Requires: stopping one domain (finalise) must not stop k3s.
+    - name: Make k3s bring up the Flow Domain first
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ item }}.service.d/flow-domain-{{ dmf_workload.spec.mediaExchange.domain }}.conf"
+        mode: "0644"
+        content: |
+          [Unit]
+          Wants={{ mxl_domain_unit.stdout }}
+          After={{ mxl_domain_unit.stdout }}
+      loop: [k3s, k3s-agent]
+
+    # A live domain is never remounted: that would drop every Grain and restart
+    # the production. Systemd adopts an existing mount as this unit's active
+    # state. Changed options apply at the next start; to resize now, finalise +
+    # provision.
+    - name: Reload systemd
       ansible.builtin.systemd_service:
-        name: "{{ mxl_domain_unit.stdout }}"
-        enabled: true
         daemon_reload: true
 
     - name: Mount the Flow Domain tmpfs
@@ -115,6 +135,11 @@
 - name: Delete the Flow Domain
   when: dmf_mxl_state == 'absent'
   block:
+    - name: Remove the k3s drop-ins for this Flow Domain
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item }}.service.d/flow-domain-{{ dmf_workload.spec.mediaExchange.domain }}.conf"
+        state: absent
+      loop: [k3s, k3s-agent]
     - name: Check for the Flow Domain mount unit
       ansible.builtin.stat:
         path: "/etc/systemd/system/{{ mxl_domain_unit.stdout }}"
@@ -124,7 +149,10 @@
       ansible.builtin.systemd_service:
         name: "{{ mxl_domain_unit.stdout }}"
         state: stopped
-        enabled: false
+    - name: Remove the boot-time link from an earlier version of this role
+      ansible.builtin.file:
+        path: "/etc/systemd/system/local-fs.target.wants/{{ mxl_domain_unit.stdout }}"
+        state: absent
     - name: Remove the Flow Domain mount unit
       ansible.builtin.file:
         path: "/etc/systemd/system/{{ mxl_domain_unit.stdout }}"
