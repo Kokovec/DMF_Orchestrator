@@ -13,6 +13,13 @@
 //     sound by the whole audio buffer.
 // The 60 ms nudge stood for a server-side gap that mixer-audio-latency.py removes.
 //
+// The worklet's PTS also has to follow the audio position. When the buffer runs
+// high the worklet drains it by advancing its read pointer faster than it outputs
+// samples, skipping audio, but upstream's PTS counts samples output. Every skipped
+// sample left the clock permanently behind what is heard, so sync got worse over a
+// session (measured live: ~550 ms unaccounted for after a few minutes, with the
+// picture drawn on arrival). PTS now counts the samples consumed from the ring.
+//
 // usage: node ui-av-clock.mjs <switchframe/ui/src/lib/prism>
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -49,4 +56,17 @@ patch('audio-decoder.test.ts', [
    '\t\t\t// DMF patch: no outputLatency → raw PTS.\n'],
   ['expect(pts).toBe(rawPTS - 160_000);', 'expect(pts).toBe(rawPTS);'],
 ]);
-console.log('ui-av-clock: audio clock = output PTS - output latency');
+patch('audio-worklet.ts', [
+  ['\t\t// PTS tracks samples actually output to speakers (toRead), not the\n' +
+   '\t\t// speed-adjusted ring pointer advance (toAdvance). When adaptive rate\n' +
+   '\t\t// control drains excess buffer at >1.0x speed, the ring pointer jumps\n' +
+   '\t\t// ahead (skipping samples), but PTS should reflect wall-clock playback\n' +
+   '\t\t// position. Using samplesConsumed would cause PTS to overshoot by\n' +
+   '\t\t// ~50ms/sec at 1.05x, accumulating seconds of AV sync drift over time.\n',
+   '\t\t// DMF patch: PTS follows the ring read position, i.e. the audio being\n' +
+   '\t\t// heard. Counting samples output instead leaves it behind by every\n' +
+   '\t\t// sample skipped while draining a deep buffer.\n'],
+  ['((this.sampleOffset + this.samplesOutput) / this.localSampleRate) * 1_000_000;',
+   '((this.sampleOffset + this.samplesConsumed) / this.localSampleRate) * 1_000_000;'],
+]);
+console.log('ui-av-clock: audio clock = ring read position - output latency');

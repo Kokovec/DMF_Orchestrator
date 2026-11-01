@@ -14,6 +14,29 @@
       ansible.builtin.set_fact:
         dmf_workload: "{{ lookup('ansible.builtin.file', dmf_repo_root ~ '/workloads/' ~ workload ~ '.yaml') | from_yaml }}"
 
+    # Archiving and teardown both need the running cluster. Stop here, before
+    # creating an archive that would have nothing in it.
+    - name: Check that the facility is running
+      ansible.builtin.command: "{{ kubectl }} get pods"
+      register: cluster_up
+      changed_when: false
+      failed_when: false
+
+    - name: Require a running facility
+      ansible.builtin.assert:
+        that: cluster_up.rc == 0
+        fail_msg: "The facility is not running, and finalise needs it to archive and tear down. Run: make start NO_BROWSER=1 WORKLOAD={{ workload }}"
+        quiet: true
+
+    - name: Wait for Keycloak (Terraform removes the workload's client from it)
+      ansible.builtin.uri:
+        url: "https://keycloak.{{ dmf_base_domain | default('dmf.test') }}/realms/master/.well-known/openid-configuration"
+        validate_certs: false
+      register: keycloak_ready
+      retries: 60
+      delay: 5
+      until: keycloak_ready.status == 200
+
     - name: Create archive directory
       ansible.builtin.file:
         path: "{{ archive }}/logs"

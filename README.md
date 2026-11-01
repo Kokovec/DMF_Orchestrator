@@ -39,34 +39,51 @@ curl -fsSL https://get.docker.com | sudo sh     # or see docs.docker.com/engine/
 sudo usermod -aG docker "$USER"                 # then open a new shell
 ```
 
-**On Windows with WSL2,** do this first:
+**On Windows with WSL2,** do these first. In PowerShell (prompt `PS C:\...>`):
 
-1. In PowerShell, install Ubuntu if you don't have it: `wsl --install -d Ubuntu-24.04`.
-2. Give WSL enough resources in `C:\Users\<you>\.wslconfig`:
+```powershell
+wsl --install -d Ubuntu-24.04     # asks you to create a username and password
+wsl -d Ubuntu-24.04               # opens it; the Ubuntu 24.04 Start menu entry does the same
+```
+
+The prompt changes to `you@machine:...$`, which means you're now in Linux, even in a PowerShell window. Everything else in this guide runs there unless it says PowerShell. If you have more than one distro, this shows which one you're in:
+
+```bash
+echo $WSL_DISTRO_NAME
+```
+
+Then:
+
+1. Give WSL enough resources. These settings aren't commands: put them in the Windows file `C:\Users\<you>\.wslconfig`, then run `wsl --shutdown` in PowerShell and reopen the distro.
    ```ini
    [wsl2]
    processors=16
    memory=20GB
    ```
-3. Inside Ubuntu, make sure `/etc/wsl.conf` enables systemd:
-   ```ini
-   [boot]
-   systemd=true
+2. Check that `cat /etc/wsl.conf` shows `systemd=true` under `[boot]`. A fresh Ubuntu-24.04 has this.
+3. Fix DNS. WSL's DNS proxy with IPv6 disabled breaks Terraform (`make infra` checks for this and stops). A fresh distro can have this setup, so check for `10.255.255.254` with `grep nameserver /etc/resolv.conf`, and if it's there:
+   ```bash
+   printf '[network]\ngenerateResolvConf = false\n' | sudo tee -a /etc/wsl.conf
+   sudo rm /etc/resolv.conf
+   printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf
    ```
-4. Apply both from PowerShell with `wsl --shutdown`, then reopen Ubuntu.
-5. Install **Google Chrome on Windows**. It is the recommended way to view the UI.
-
-Later steps run a check for a known WSL DNS problem. If it stops you, it prints the fix.
+   This uses public DNS servers. On a VPN or company network, use theirs instead.
+4. Install **Google Chrome on Windows**. It is the recommended way to view the UI.
 
 ### 2. Get the code and tools
 
+Clone into your Linux home folder. **Not `/mnt/c`:** WSL often starts you on the Windows drive, and the build refuses to run there.
+
 ```bash
+cd ~
 git clone https://github.com/Kokovec/switchframe-dmf.git
 cd switchframe-dmf
-make prereqs                      # terraform, kubectl, helm, ansible into ./.tools (no sudo)
+make prereqs                      # terraform, kubectl, helm, ansible (no sudo)
 ```
 
-Everything goes into `./.tools`; nothing is installed system-wide. Run all later commands from this directory. Commands marked `(sudo)` below ask for your sudo password.
+If the repository is private, log in first with `sudo apt-get install -y gh && gh auth login && gh auth setup-git`.
+
+The tools install into a `.tools` folder, and nothing is installed system-wide. You never need to go into that folder: run every `make` command from `~/switchframe-dmf`. Commands marked `(sudo)` below ask for your sudo password as `BECOME password:`.
 
 ### 3. Build the DMF environment
 
@@ -129,10 +146,12 @@ Grafana is at https://grafana.dmf.test (dashboard **DMF / Media Workloads**).
 ```bash
 make start WORKLOAD=news-studio    # start the facility, wait until on air, open Chrome
 make stop                          # stop it and free its memory
-make finalise WORKLOAD=news-studio # production over: archive to .state/archive/, tear down, free the Flow Domain
+make finalise WORKLOAD=news-studio # production over: archive to .state/archive/, tear down, free the Flow Domain (sudo)
 ```
 
 On WSL the facility does not start with WSL, so run `make start` after each WSL restart. After `make hosts` it is already running. `make start NO_BROWSER=1` skips opening Chrome.
+
+`make stop` is for pausing: the production comes back on `make start`. `make finalise` removes the production for good, and needs the facility running, so don't `make stop` first.
 
 ### If something goes wrong
 
@@ -141,6 +160,7 @@ On WSL the facility does not start with WSL, so run `make start` after each WSL 
 | `dial tcp [2600:...]: connect: cannot assign requested address` | WSL DNS with IPv6 disabled. Follow the fix `make` prints |
 | UI shows **POLLING**, no video | WebTransport isn't connected. Check that UDP `quicPort` is reachable and that you used `make windows-browser` after any WSL IP change |
 | Page says LIVE but sources show STALL | The tab outlived a SwitchFrame restart. Reload it |
+| `make finalise` says the facility is not running | Run `make start NO_BROWSER=1`, then `make finalise` again |
 | `make start` times out | Run `make stop`, then `make start`. If it persists: `journalctl -u k3s -n 50` |
 | Scratchy audio | Usually too little CPU. See [Viewing it](#viewing-it-wsl2) |
 | No sound | Click in the page once. BARS and BLACK on programme are silent |
@@ -233,7 +253,7 @@ Three more patches fix timing defects found with the `sync` source (`mxl-syncsrc
 - [`mxl-writer-phase.py`](images/media-functions/patches/mxl-writer-phase.py): the MXL programme writer writes each grain once, half a frame after frames typically arrive, instead of from a free-running ticker that dropped and repeated frames.
 - [`mixer-audio-latency.py`](images/media-functions/patches/mixer-audio-latency.py): the audio mixer holds a fixed, short per-source buffer (narrow drift band; immediate resync after start-up, reconnects and cuts, where it used to drain at 1 ms/s for minutes). Programme audio is timestamped with the time it entered the mixer, in MXL and in the browser stream. MXL programme A/V: +22 ms steady, was 66–195 ms.
 - [`programme-pts-resync.py`](images/media-functions/patches/programme-pts-resync.py): programme video timestamps jump to wall-clock time after time on a built-in source (BARS, BLACK). They used to freeze there and then catch up at 1.5x, leaving picture and sound apart for twice as long as the source was on air.
-- [`ui-av-clock.mjs`](images/media-functions/patches/ui-av-clock.mjs): the browser player's audio clock no longer subtracts audio it has not played yet. Programme offset in Chrome: a steady 26–29 ms across page loads, was −371 to +422 ms.
+- [`ui-av-clock.mjs`](images/media-functions/patches/ui-av-clock.mjs): the browser player's audio clock follows the audio position: it no longer subtracts audio it has not played yet, or falls behind each time the player skips samples to drain a deep buffer. Programme offset in Chrome: a steady 26–29 ms across page loads, was −371 to +422 ms.
 
 ### Add-ons written for this package
 

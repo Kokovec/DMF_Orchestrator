@@ -11,6 +11,11 @@
 
 SHELL        := /bin/bash
 ROOT         := $(abspath .)
+# Linux tools are very slow on a Windows drive, and Ansible ignores its config in
+# world-writable folders, which is how Windows folders appear from WSL.
+ifneq ($(filter /mnt/%,$(ROOT)),)
+$(error This checkout is on a Windows drive ($(ROOT)). Clone it in your Linux home folder: cd ~ && git clone ...)
+endif
 export PATH  := $(ROOT)/.tools/bin:$(PATH)
 export ANSIBLE_CONFIG := $(ROOT)/ansible/ansible.cfg
 export KUBECONFIG := $(ROOT)/.state/kubeconfig
