@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<workload xmlns="urn:dmf:workload:v1" schemaVersion="1" apiVersion="dmf-toolkit/v1alpha4" id="studio-a" uid="9dd110d0-8c14-5c77-acf6-3eb708bf0c13" name="Studio A" revision="1" libraryVersion="4.0.0">
+<workload xmlns="urn:dmf:workload:v1" schemaVersion="1" apiVersion="dmf-toolkit/v1alpha4" id="studio-a" uid="9dd110d0-8c14-5c77-acf6-3eb708bf0c13" name="Studio A" revision="1" libraryVersion="4.0.1">
   <description>Two-camera studio with an A/V sync source: the news-studio design, expressed as a published workload.</description>
   <defaults>
     <video grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" colorspace="BT709"/>
@@ -31,11 +31,13 @@
         <value path="mxl.format.video.rate" type="string">29.97</value>
         <value path="mxl.format.video.scan" type="string">progressive</value>
         <value path="mxl.format.video.colorspace" type="string">BT709</value>
+        <value path="mxl.format.video.transfer" type="string">SDR</value>
         <value path="mxl.format.audio.channels" type="integer">2</value>
       </parameters>
       <control>
         <health type="exec"/>
       </control>
+      <resources cpu="0.25" memoryMiB="256"/>
       <discovery register="true"/>
     </function>
     <function id="cam2" type="dmf-mxl.1" typeVersion="1.0.0" name="Camera 2" domain="main">
@@ -48,11 +50,13 @@
         <value path="mxl.format.video.rate" type="string">29.97</value>
         <value path="mxl.format.video.scan" type="string">progressive</value>
         <value path="mxl.format.video.colorspace" type="string">BT709</value>
+        <value path="mxl.format.video.transfer" type="string">SDR</value>
         <value path="mxl.format.audio.channels" type="integer">2</value>
       </parameters>
       <control>
         <health type="exec"/>
       </control>
+      <resources cpu="0.25" memoryMiB="256"/>
       <discovery register="true"/>
     </function>
     <function id="sync" type="dmf-mxl.2" typeVersion="1.0.0" name="Sync test" domain="main">
@@ -64,11 +68,13 @@
         <value path="mxl.format.video.rate" type="string">29.97</value>
         <value path="mxl.format.video.scan" type="string">progressive</value>
         <value path="mxl.format.video.colorspace" type="string">BT709</value>
+        <value path="mxl.format.video.transfer" type="string">SDR</value>
         <value path="mxl.format.audio.channels" type="integer">2</value>
       </parameters>
       <control>
         <health type="exec"/>
       </control>
+      <resources cpu="0.25" memoryMiB="256"/>
       <discovery register="true"/>
     </function>
     <function id="vision-mixer" type="switchframe.1" typeVersion="1.1.0" name="Vision mixer" domain="main">
@@ -124,7 +130,7 @@
   <flows>
     <flow id="817de3a0-f16a-5268-9d73-6b157c4b3611" label="cam1/mxl.video" domain="main" essence="video" writer="cam1/mxl.video" historyMs="500">
       <reader>vision-mixer/mxl-src.video</reader>
-      <format mediaType="video/v210" grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" interlace="progressive" colorspace="BT709"/>
+      <format mediaType="video/v210" grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" interlace="progressive" colorspace="BT709" transfer="SDR"/>
       <discovery register="true"/>
     </flow>
     <flow id="0df91bf2-acf0-536c-9baa-33391e24529a" label="cam1/mxl.audio" domain="main" essence="audio" writer="cam1/mxl.audio" historyMs="500">
@@ -134,7 +140,7 @@
     </flow>
     <flow id="2d0d6a28-4be2-5019-815b-e137d99e7cb9" label="cam2/mxl.video" domain="main" essence="video" writer="cam2/mxl.video" historyMs="500">
       <reader>vision-mixer/mxl-src_2.video</reader>
-      <format mediaType="video/v210" grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" interlace="progressive" colorspace="BT709"/>
+      <format mediaType="video/v210" grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" interlace="progressive" colorspace="BT709" transfer="SDR"/>
       <discovery register="true"/>
     </flow>
     <flow id="4657deb1-15c6-50b3-a3f6-d362c5df1d51" label="cam2/mxl.audio" domain="main" essence="audio" writer="cam2/mxl.audio" historyMs="500">
@@ -144,7 +150,7 @@
     </flow>
     <flow id="f0f87544-fcf8-5cc1-9852-f601025609bc" label="sync/mxl.video" domain="main" essence="video" writer="sync/mxl.video" historyMs="500">
       <reader>vision-mixer/mxl-src_3.video</reader>
-      <format mediaType="video/v210" grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" interlace="progressive" colorspace="BT709"/>
+      <format mediaType="video/v210" grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" interlace="progressive" colorspace="BT709" transfer="SDR"/>
       <discovery register="true"/>
     </flow>
     <flow id="778c3ad8-a7ad-526c-be61-9b18ed1c5461" label="sync/mxl.audio" domain="main" essence="audio" writer="sync/mxl.audio" historyMs="500">

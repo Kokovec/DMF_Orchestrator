@@ -72,12 +72,12 @@ Refuse with a message naming function and parameter. Report all problems, not ju
 2. Exactly one `switchframe.1` function (assumption 2). One domain.
 3. Facility capability exists for each selected input, output, feature and enum value (see [02-switchframe-options.md](02-switchframe-options.md)).
 4. `resolution` + `rate` is a real SwitchFrame format.
-5. Every MXL source flow matches the engine: frame size, rate, `video/v210`, progressive; audio 48 kHz float32. `dmf-mxl.2` requires 1080p29.97. Name the source, its value and the engine's value: the toolkit doesn't compare a source's format with the engine, so this is where a mismatch is caught.
+5. Every MXL source flow matches the engine: frame size, rate, `video/v210`, progressive, BT709, and `transfer` absent or SDR; audio 48 kHz float32. `dmf-mxl.2` requires 1080p29.97. Name the source, its value and the engine's value: the toolkit doesn't compare a source's format with the engine, so this is where a mismatch is caught. No wire reads `mxl-out.anc`: the toolkit can't produce one, so this only catches hand-edited XML.
 6. Every required secret exists in `.state/secrets/<id>.yaml`. Stage 5 onward.
 7. `id` is free or owned by this file: an existing `workloads/<id>.yaml` without the generated header is refused. It's never overwritten.
 8. Other things the generated YAML must satisfy: everything `workload-plan.yml` asserts.
 
-Warn, and continue: `freerun` with MXL sources, `settings.extraArgs` in use, and the "Ignored for now" options.
+Warn, and continue: `freerun` with MXL sources, `settings.extraArgs` in use, SCTE-104 on with no `mxl-src` `anc` port wired (the product only reads when a data flow exists), and the "Ignored for now" options.
 Refuse `--demo` in any args.
 
 ## Allocation (`allocate.py`)

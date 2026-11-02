@@ -52,7 +52,8 @@ defaults?: {
 | Module | `inputs` | `outputs` | `control.health` | `resources` | `discovery` | `parameters` |
 |---|---|---|---|---|---|---|
 | `switchframe.1` | `mxl-src: 1` | `mxl-out: 1` | http 9090 `/health` | cpu 2, memoryMiB 4096 | `register: true` | none |
-| `dmf-mxl.1`, `dmf-mxl.2` | none | `mxl: 1` | exec | cpu 0.25, memoryMiB 256 | `register: true` | `mxl.format.video`: 1920x1080, 29.97 |
+| `dmf-mxl.1` | none | `mxl: 1` | exec | cpu 0.25, memoryMiB 256 | `register: true` | `mxl.format.video`: 1920x1080, 29.97 |
+| `dmf-mxl.2` | none | `mxl: 1` | exec | cpu 0.25, memoryMiB 256 | `register: true` | none: `allowed` already gives the format |
 
 `discovery` is set directly, not through `control.nmos`, because these products don't register
 themselves: this facility's `mxl-flow-agent` registers every flow in the domain.
@@ -99,7 +100,7 @@ are left to compile rule 5.
 - `srt-out.srt.streamId`, `rtmp-out`: unchanged.
 - Remove `control.control.access.*` and `control.control.allowedOrigins`.
 - Remove `off` from `captions.captions.mode`: the feature toggle is how captions are turned off. Default stays `passthrough`.
-- `switcher.scte104` has `key: scte104`, so its toggle is `scte35.scte104`.
+- `switcher.scte104` has `key: scte104`, so its toggle is `scte35.scte104`. It requires `switcher.input.mxl` only, and its description says it reads SCTE-104 from MXL data flows: the product attempts writes, but the programme output has no data writer to carry them.
 - `onAirAtStart`, when unset, is published as the first input in use.
 - Add to `frameSync`'s description: "Leave off for MXL sources; they are already locked to the facility clock, and freerun drops single frames."
 - Refresh the mapping doc from [02-switchframe-options.md](02-switchframe-options.md).

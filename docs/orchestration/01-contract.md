@@ -73,6 +73,7 @@ round trip on the same fixtures.
 - `schemaVersion` and the namespace change only for an incompatible change, with a new file: `dmf-workload-v2.xsd`.
 - New module parameters, modules and library features don't change the schema.
 - The compiler accepts `schemaVersion=1` and the module versions it knows. Any other version is refused with a message naming it.
+- `libraryVersion` is informational: the compiler records it and doesn't check it, so a library bump alone never blocks a deployment. Module versions are what it gates on. A library change that alters a module's meaning must bump that module's version.
 - `schemas/dmf-workload-v1.xsd` here is the source of truth. The toolkit's copy must be byte-identical; its tests compare a hash recorded in the toolkit.
 
 ## Flow identity
