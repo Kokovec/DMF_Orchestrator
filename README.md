@@ -64,10 +64,13 @@ Then:
 3. Fix DNS. WSL's DNS proxy with IPv6 disabled breaks Terraform (`make infra` checks for this and stops). A fresh distro can have this setup, so check for `10.255.255.254` with `grep nameserver /etc/resolv.conf`, and if it's there:
    ```bash
    printf '[network]\ngenerateResolvConf = false\n' | sudo tee -a /etc/wsl.conf
-   sudo rm /etc/resolv.conf
+   ```
+   Restart the distro, because WSL reads `wsl.conf` only when a distro starts, and until then every new session puts the proxy back. In PowerShell, run `wsl --terminate Ubuntu-24.04`, then reopen it with `wsl -d Ubuntu-24.04`. Then:
+   ```bash
+   sudo rm -f /etc/resolv.conf
    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf
    ```
-   This uses public DNS servers. On a VPN or company network, use theirs instead.
+   This uses public DNS servers; on a VPN or company network, use theirs instead.
 4. Install **Google Chrome on Windows**. It is the recommended way to view the UI.
 
 ### 2. Get the code and tools

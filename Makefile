@@ -52,9 +52,11 @@ platform: ## Shared services: PKI, monitoring, Keycloak, NMOS registry, guardrai
 	$(PLAYBOOK) playbooks/platform.yml $(BECOME)
 
 plan: ## PLAN: validate design, capacity check, terraform plan
+	@$(PREFLIGHT)
 	$(PLAYBOOK) playbooks/workload-plan.yml -e workload=$(WORKLOAD)
 
 provision: ## PROVISION + CONFIGURE: Flow Domain, Media Functions, connections
+	@$(PREFLIGHT)
 	$(PLAYBOOK) playbooks/workload-provision.yml -e workload=$(WORKLOAD) $(BECOME)
 
 status: ## MONITOR: one-shot status across layers

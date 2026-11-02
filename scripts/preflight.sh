@@ -20,8 +20,9 @@ preflight: WSL DNS proxy + disabled IPv6 detected.
 
   Persistent:
     printf '[network]\ngenerateResolvConf = false\n' | sudo tee -a /etc/wsl.conf
-    sudo rm /etc/resolv.conf && printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf
-    (then from Windows: wsl --shutdown)
+    (then from Windows: wsl --terminate <distro>; WSL reads wsl.conf only when a distro starts,
+     and until then every new session puts the proxy back. Reopen the distro, then:)
+    sudo rm -f /etc/resolv.conf && printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf
 
   Override this check with: make ... SKIP_PREFLIGHT=1
 MSG
