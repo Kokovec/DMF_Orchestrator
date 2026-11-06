@@ -1,11 +1,16 @@
 # XML contract
 
 Schema: [schemas/dmf-workload-v1.xsd](../../schemas/dmf-workload-v1.xsd), namespace
-`urn:dmf:workload:v1`. Example: [examples/studio-a.workload.xml](../../examples/studio-a.workload.xml).
+`urn:dmf:workload:v1`. Example: [examples/studio-a.workload.xml](../../examples/studio-a.workload.xml),
+a copy of the toolkit's `scripts/fixtures/studio-a.workload.xml`. It's real output, not hand-written:
+when the toolkit's output for it changes, copy it here again.
 
 The XML is a lossless rendering of the toolkit's published JSON (`toPublished`), plus the additions
-in [03-toolkit-spec.md](03-toolkit-spec.md). Canvas layout and `flowOptions` are not included: flow
-options are already resolved into `flows`.
+in [03-toolkit-spec.md](03-toolkit-spec.md). Canvas layout isn't part of the published JSON. Nor
+are `flowOptions`, which `toPublished` drops because they're already resolved into `flows`.
+
+Anything the XML can't carry is a publish problem, so the JSON route, the XML route and the canvas
+agree on whether a revision is publishable.
 
 ## Mapping
 
@@ -56,7 +61,11 @@ Rules:
 Output must be deterministic, so the same revision gives identical bytes:
 - UTF-8, XML declaration, 2-space indent, LF line endings, trailing newline, no DOCTYPE, no comments.
 - Element order follows the XSD. Functions, externals, flows, wires and values keep the published document's order.
-- Escape `& < > " '`. Refuse (HTTP 422) characters XML 1.0 can't carry, such as most control characters; XML has no escape for these.
+- Escape `& < > " '`. Also write CR as `&#13;` everywhere, and tab and LF as `&#9;` and `&#10;` inside attributes. Otherwise parsers normalise them and the round trip isn't lossless.
+- Refuse characters XML 1.0 can't carry, such as most control characters; XML has no escape for these.
+- An `xs:token` attribute (`domain`, `type`, `kind` and others) must already be in normal form: no leading, trailing or repeated spaces, and no tab or newline. Otherwise a reader collapses it and changes the value, so the toolkit refuses it. Free text uses `xs:string`.
+- Ids (workload, function, external) match the schema's `Id`: `^[a-z0-9]([-a-z0-9]{0,40}[a-z0-9])?$`. This fits Kubernetes names as `wl-<id>` and this repo's plan check. The toolkit enforces it when saving, not only when serialising.
+- `historyMs` is at least 1, in the toolkit and in the schema.
 
 ## Reading (compiler)
 

@@ -12,7 +12,7 @@ report the contradiction and propose a change here; don't work around it silentl
 | [04-orchestrator-spec.md](04-orchestrator-spec.md) | Compiler, facility profile, reconciler, chart and lifecycle changes |
 | [prompts/](prompts/) | One self-contained Claude Code prompt per build stage |
 | [../../schemas/dmf-workload-v1.xsd](../../schemas/dmf-workload-v1.xsd) | The XML schema |
-| [../../examples/studio-a.workload.xml](../../examples/studio-a.workload.xml) | A valid example, also the compiler's first golden input |
+| [../../examples/studio-a.workload.xml](../../examples/studio-a.workload.xml) | The toolkit's real output for `studio-a`, and the compiler's first golden input |
 
 ## The system
 

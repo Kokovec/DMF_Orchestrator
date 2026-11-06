@@ -101,6 +101,57 @@
         <feature block="recording" enabled="false"/>
       </features>
       <parameters>
+        <value path="mxl-src.source.delayMs" type="integer">0</value>
+        <value path="mxl-src.source.label" type="string">Camera 1</value>
+        <value path="mxl-src.source.position" type="integer">1</value>
+        <value path="mxl-src.audio.trimDb" type="integer">0</value>
+        <value path="mxl-src.audio.afv" type="boolean">true</value>
+        <value path="mxl-src.audio.delayMs" type="integer">0</value>
+        <value path="mxl-src.audio.highPass.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.gate.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.eq.low.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.eq.mid.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.eq.high.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.compressor.thresholdDb" type="integer">0</value>
+        <value path="mxl-src.audio.compressor.ratio" type="integer">1</value>
+        <value path="mxl-src.audio.compressor.attackMs" type="integer">5</value>
+        <value path="mxl-src.audio.compressor.releaseMs" type="integer">100</value>
+        <value path="mxl-src.audio.compressor.makeupGainDb" type="integer">0</value>
+        <value path="mxl-src.key.type" type="string">off</value>
+        <value path="mxl-src_2.source.delayMs" type="integer">0</value>
+        <value path="mxl-src_2.source.label" type="string">Camera 2</value>
+        <value path="mxl-src_2.source.position" type="integer">2</value>
+        <value path="mxl-src_2.audio.trimDb" type="integer">0</value>
+        <value path="mxl-src_2.audio.afv" type="boolean">true</value>
+        <value path="mxl-src_2.audio.delayMs" type="integer">0</value>
+        <value path="mxl-src_2.audio.highPass.enabled" type="boolean">false</value>
+        <value path="mxl-src_2.audio.gate.enabled" type="boolean">false</value>
+        <value path="mxl-src_2.audio.eq.low.enabled" type="boolean">false</value>
+        <value path="mxl-src_2.audio.eq.mid.enabled" type="boolean">false</value>
+        <value path="mxl-src_2.audio.eq.high.enabled" type="boolean">false</value>
+        <value path="mxl-src_2.audio.compressor.thresholdDb" type="integer">0</value>
+        <value path="mxl-src_2.audio.compressor.ratio" type="integer">1</value>
+        <value path="mxl-src_2.audio.compressor.attackMs" type="integer">5</value>
+        <value path="mxl-src_2.audio.compressor.releaseMs" type="integer">100</value>
+        <value path="mxl-src_2.audio.compressor.makeupGainDb" type="integer">0</value>
+        <value path="mxl-src_2.key.type" type="string">off</value>
+        <value path="mxl-src_3.source.delayMs" type="integer">0</value>
+        <value path="mxl-src_3.source.label" type="string">Sync test</value>
+        <value path="mxl-src_3.source.position" type="integer">3</value>
+        <value path="mxl-src_3.audio.trimDb" type="integer">0</value>
+        <value path="mxl-src_3.audio.afv" type="boolean">true</value>
+        <value path="mxl-src_3.audio.delayMs" type="integer">0</value>
+        <value path="mxl-src_3.audio.highPass.enabled" type="boolean">false</value>
+        <value path="mxl-src_3.audio.gate.enabled" type="boolean">false</value>
+        <value path="mxl-src_3.audio.eq.low.enabled" type="boolean">false</value>
+        <value path="mxl-src_3.audio.eq.mid.enabled" type="boolean">false</value>
+        <value path="mxl-src_3.audio.eq.high.enabled" type="boolean">false</value>
+        <value path="mxl-src_3.audio.compressor.thresholdDb" type="integer">0</value>
+        <value path="mxl-src_3.audio.compressor.ratio" type="integer">1</value>
+        <value path="mxl-src_3.audio.compressor.attackMs" type="integer">5</value>
+        <value path="mxl-src_3.audio.compressor.releaseMs" type="integer">100</value>
+        <value path="mxl-src_3.audio.compressor.makeupGainDb" type="integer">0</value>
+        <value path="mxl-src_3.key.type" type="string">off</value>
         <value path="engine.engine.resolution" type="string">1920x1080</value>
         <value path="engine.engine.rate" type="string">29.97</value>
         <value path="engine.engine.scan" type="string">progressive</value>
@@ -109,16 +160,23 @@
         <value path="engine.engine.frameSync" type="string">off</value>
         <value path="engine.engine.frameRateConversion" type="string">none</value>
         <value path="engine.engine.onAirAtStart" type="string">mxl-src</value>
-        <value path="mxl-src.source.label" type="string">Camera 1</value>
-        <value path="mxl-src.source.position" type="integer">1</value>
-        <value path="mxl-src_2.source.label" type="string">Camera 2</value>
-        <value path="mxl-src_2.source.position" type="integer">2</value>
-        <value path="mxl-src_3.source.label" type="string">Sync test</value>
-        <value path="mxl-src_3.source.position" type="integer">3</value>
+        <value path="audio.master.limiter.thresholdDb" type="integer">-3</value>
+        <value path="audio.master.limiter.ceilingDb" type="integer">-1</value>
+        <value path="encoder.encoder.bitrateMbps" type="integer">0</value>
+        <value path="encoder.encoder.gopSeconds" type="integer">2</value>
+        <value path="encoder.encoder.preset" type="string">balanced</value>
+        <value path="encoder.encoder.timecode" type="boolean">false</value>
         <value path="replay.replay.bufferSeconds" type="integer">300</value>
+        <value path="replay.replay.shutterAngle" type="integer">180</value>
+        <value path="clips.clips.storageMaxGB" type="integer">10</value>
+        <value path="clips.clips.ephemeralTtlHours" type="integer">24</value>
         <value path="control.control.previewProxy" type="boolean">true</value>
         <value path="control.control.previewResolution" type="string">480p</value>
         <value path="control.control.previewBitrateKbps" type="integer">500</value>
+        <value path="control.control.relayResolution" type="string">720p</value>
+        <value path="control.control.relayBitrateKbps" type="integer">2000</value>
+        <value path="control.network.exposure" type="string">wan-facing</value>
+        <value path="control.network.pathA" type="emptyObject"/>
       </parameters>
       <control>
         <health type="http" port="9090" path="/health"/>

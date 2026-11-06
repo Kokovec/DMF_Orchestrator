@@ -10,7 +10,7 @@ Read first:
 1. `docs/orchestration/README.md`, `01-contract.md`, `02-switchframe-options.md`, `04-orchestrator-spec.md`
 2. `schemas/dmf-workload-v1.xsd`, `examples/studio-a.workload.xml`
 3. `workloads/news-studio.yaml`, `terraform/stacks/workload/main.tf`, `ansible/playbooks/workload-plan.yml`, `ansible/scripts/capacity.py`, `scripts/validate.sh`
-4. A real published file, for comparison: `/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit/`. Stage 2's report names the path; if you don't have it, ask me. Read-only.
+4. `examples/studio-a.workload.xml` is real toolkit output. The toolkit's fixtures are in `/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit/scripts/fixtures/` (read-only): `every-value.workload.xml` covers every value type, and each `.workload.xml` has a `.published.json` twin to test your XML reader against.
 
 Build, as in `04-orchestrator-spec.md`:
 - `tools/dmf_compile/` with `reader`, `facility`, `allocate`, `sizing`, `emit`, and `products/switchframe.py`, `products/dmf_mxl.py`
@@ -27,8 +27,8 @@ Compile against the pinned SwitchFrame source for flags: clone https://github.co
 
 Acceptance, shown with real output:
 - `make validate` passes, with compiler tests running.
-- `make import XML=examples/studio-a.workload.xml` gives the expected warnings for an abbreviated file and writes both files. Output matches a golden file.
-- Stage 2's real file compiles, too.
+- `make import XML=examples/studio-a.workload.xml` gives only the warnings the spec calls for and writes both files. Output matches a golden file.
+- `every-value.workload.xml` reads back deep-equal to its `.published.json`. It's not a deployable workload, so compiling it is expected to fail with clear messages: show them.
 - Generated YAML passes `yamllint` and every assertion in `workload-plan.yml`, evaluated in a test. Both `awk` lines in `scripts/windows-browser.sh` and `scripts/facility.sh` return the right values on it.
 - `helm template` renders with values derived from it.
 - Each compile rule has a failing test, and refusal messages name function and parameter. Several problems are reported together.
