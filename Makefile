@@ -21,14 +21,16 @@ export ANSIBLE_CONFIG := $(ROOT)/ansible/ansible.cfg
 export KUBECONFIG := $(ROOT)/.state/kubeconfig
 INFRA        ?= localhost
 WORKLOAD     ?= news-studio
+FACILITY     ?= local
+PYTHON       := $(ROOT)/.tools/venv/bin/python
 TF_STACKS    := $(ROOT)/terraform/stacks
 PLAYBOOK     := cd ansible && ansible-playbook
 BECOME       ?= --ask-become-pass
 SKIP_PREFLIGHT ?=
 PREFLIGHT    := $(if $(SKIP_PREFLIGHT),true,scripts/preflight.sh)
 
-.PHONY: help prereqs infra hosts images platform plan provision status start stop finalise up destroy windows-browser \
-        trust-ca secrets nmos-query lint validate clean
+.PHONY: help prereqs infra hosts images platform import facility-export plan provision status start stop finalise up \
+        destroy windows-browser trust-ca secrets nmos-query lint validate clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n",$$1,$$2}'
@@ -50,6 +52,13 @@ images: ## Build Media Function images and load them into every node
 platform: ## Shared services: PKI, monitoring, Keycloak, NMOS registry, guardrails
 	@$(PREFLIGHT)
 	$(PLAYBOOK) playbooks/platform.yml $(BECOME)
+
+import: ## DESIGN: compile a published workload (XML=<file|http://localhost url> [FACILITY=local] [ALLOW_REMOTE=1])
+	@test -n "$(XML)" || { echo "usage: make import XML=<file or http://localhost/... url> [FACILITY=local]"; exit 2; }
+	@$(PYTHON) -m tools.dmf_compile compile "$(XML)" --facility "$(FACILITY)" $(if $(ALLOW_REMOTE),--allow-remote)
+
+facility-export: ## Write .state/facility-<FACILITY>.json for DMF Toolkit (DMF_FACILITY)
+	@$(PYTHON) -m tools.dmf_compile facility-export --facility "$(FACILITY)"
 
 plan: ## PLAN: validate design, capacity check, terraform plan
 	@$(PREFLIGHT)

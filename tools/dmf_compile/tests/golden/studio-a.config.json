@@ -1,0 +1,398 @@
+{
+  "apiVersion": "dmf.local/v1alpha1",
+  "kind": "SwitchFrameConfig",
+  "workload": "studio-a",
+  "function": "vision-mixer",
+  "revision": 1,
+  "program": {
+    "input": "mxl-src",
+    "ref": {
+      "kind": "mxl",
+      "key": "mxl:817de3a0-f16a-5268-9d73-6b157c4b3611"
+    }
+  },
+  "sources": [
+    {
+      "input": "mxl-src",
+      "ref": {
+        "kind": "mxl",
+        "key": "mxl:817de3a0-f16a-5268-9d73-6b157c4b3611"
+      },
+      "apply": [
+        {
+          "method": "POST",
+          "path": "/api/sources/{key}/label",
+          "body": {
+            "label": "Camera 1"
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/sources/{key}/position",
+          "body": {
+            "position": 1
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/sources/{key}/delay",
+          "body": {
+            "delayMs": 0
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/audio/trim",
+          "body": {
+            "source": "{key}",
+            "trim": 0
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/audio/afv",
+          "body": {
+            "source": "{key}",
+            "afv": true
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/audio-delay",
+          "body": {
+            "delayMs": 0
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/hpf",
+          "body": {
+            "frequency": 80,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/gate",
+          "body": {
+            "threshold": -40,
+            "range": -40,
+            "attack": 5,
+            "release": 100,
+            "hold": 50,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 0,
+            "frequency": 100,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 1,
+            "frequency": 1000,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 2,
+            "frequency": 8000,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/compressor",
+          "body": {
+            "threshold": 0,
+            "ratio": 1,
+            "attack": 5,
+            "release": 100,
+            "makeupGain": 0
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/sources/{key}/key"
+        }
+      ]
+    },
+    {
+      "input": "mxl-src_2",
+      "ref": {
+        "kind": "mxl",
+        "key": "mxl:2d0d6a28-4be2-5019-815b-e137d99e7cb9"
+      },
+      "apply": [
+        {
+          "method": "POST",
+          "path": "/api/sources/{key}/label",
+          "body": {
+            "label": "Camera 2"
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/sources/{key}/position",
+          "body": {
+            "position": 2
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/sources/{key}/delay",
+          "body": {
+            "delayMs": 0
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/audio/trim",
+          "body": {
+            "source": "{key}",
+            "trim": 0
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/audio/afv",
+          "body": {
+            "source": "{key}",
+            "afv": true
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/audio-delay",
+          "body": {
+            "delayMs": 0
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/hpf",
+          "body": {
+            "frequency": 80,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/gate",
+          "body": {
+            "threshold": -40,
+            "range": -40,
+            "attack": 5,
+            "release": 100,
+            "hold": 50,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 0,
+            "frequency": 100,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 1,
+            "frequency": 1000,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 2,
+            "frequency": 8000,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/compressor",
+          "body": {
+            "threshold": 0,
+            "ratio": 1,
+            "attack": 5,
+            "release": 100,
+            "makeupGain": 0
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/sources/{key}/key"
+        }
+      ]
+    },
+    {
+      "input": "mxl-src_3",
+      "ref": {
+        "kind": "mxl",
+        "key": "mxl:f0f87544-fcf8-5cc1-9852-f601025609bc"
+      },
+      "apply": [
+        {
+          "method": "POST",
+          "path": "/api/sources/{key}/label",
+          "body": {
+            "label": "Sync test"
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/sources/{key}/position",
+          "body": {
+            "position": 3
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/sources/{key}/delay",
+          "body": {
+            "delayMs": 0
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/audio/trim",
+          "body": {
+            "source": "{key}",
+            "trim": 0
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/audio/afv",
+          "body": {
+            "source": "{key}",
+            "afv": true
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/audio-delay",
+          "body": {
+            "delayMs": 0
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/hpf",
+          "body": {
+            "frequency": 80,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/gate",
+          "body": {
+            "threshold": -40,
+            "range": -40,
+            "attack": 5,
+            "release": 100,
+            "hold": 50,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 0,
+            "frequency": 100,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 1,
+            "frequency": 1000,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/eq",
+          "body": {
+            "band": 2,
+            "frequency": 8000,
+            "gain": 0,
+            "q": 0.7,
+            "enabled": false
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/audio/{key}/compressor",
+          "body": {
+            "threshold": 0,
+            "ratio": 1,
+            "attack": 5,
+            "release": 100,
+            "makeupGain": 0
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/sources/{key}/key"
+        }
+      ]
+    }
+  ],
+  "global": [
+    {
+      "method": "PUT",
+      "path": "/api/audio/limiter",
+      "body": {
+        "threshold": -3,
+        "ceiling": -1
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/replay/shutter-angle",
+      "body": {
+        "angle": 180
+      }
+    }
+  ],
+  "destinations": [],
+  "recording": null
+}

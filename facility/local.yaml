@@ -1,0 +1,28 @@
+# What this facility can run. The compiler (tools/dmf_compile) refuses any workload that needs a
+# capability set to false here; `make facility-export` gives DMF Toolkit a copy so it can grey
+# those options out. See docs/orchestration/04-orchestrator-spec.md.
+apiVersion: dmf.local/v1alpha1
+kind: Facility
+metadata: {name: local}
+spec:
+  baseDomain: dmf.test        # must match the inventory's dmf_base_domain
+  workloadUids: {first: 20001, last: 29999}
+  ports:
+    quic: {first: 8443, last: 8499}
+    srt: {first: 6464, last: 6499}
+  capabilities:
+    mxl: true
+    srt-in: true
+    srt-caller-out: true
+    rtmp-out: true
+    recording: true
+    srt-listener-out: false   # the chart opens no output ports
+    st2110: false             # needs DPDK NICs
+    moq: false                # source naming and admission are unresolved
+    gpu: false                # no GPU build in this repo
+    asr: false                # the image has no speech-to-text sidecar
+    neural-key: false         # no CUDA build
+    ai-segment: false         # no CUDA build
+    scte104: false            # depends on MXL data flows, which aren't built
+  limits:
+    maxRecordingGiB: 200

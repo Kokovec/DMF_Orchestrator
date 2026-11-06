@@ -10,7 +10,13 @@ step() { printf '\n== %s\n' "$*"; }
 run() { "$@" || { echo "FAILED: $*"; fail=1; }; }
 
 step "python"
-run python3 -m py_compile images/media-functions/mxl-flow-agent/agent.py images/sso-bridge/bridge.py ansible/scripts/capacity.py
+run python3 -m py_compile images/media-functions/mxl-flow-agent/agent.py images/sso-bridge/bridge.py ansible/scripts/capacity.py \
+  $(find tools/dmf_compile -name '*.py')
+
+step "workload compiler tests"
+# DMF_REQUIRE_TOOLS: tests that shell out to helm, yamllint, ansible-playbook or docker fail
+# instead of skipping when the tool is missing (docker is optional: see the test).
+run env DMF_REQUIRE_TOOLS=1 PYTHONDONTWRITEBYTECODE=1 .tools/venv/bin/python -m unittest discover -s tools/dmf_compile/tests -t . -v
 
 step "helm lint + render"
 SF_VALUES=$(mktemp); trap 'rm -f "$SF_VALUES"' EXIT

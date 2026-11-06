@@ -1,0 +1,149 @@
+Usage of switchframe:
+  -addr string
+    	QUIC/HTTP3 listen address (e.g., :8080, 0.0.0.0:443) (default ":8080")
+  -admin-addr string
+    	Admin/metrics server listen address (default "127.0.0.1:9090")
+  -admin-token string
+    	Bearer token for admin endpoints (/metrics, /debug); if empty, these endpoints are unprotected
+  -ai-models-dir string
+    	Directory with AI model files (ONNX + .plan) forwarded to sidecar
+  -ai-sidecar string
+    	Path to switchframe-ai sidecar binary (all AI inference)
+  -allowed-origins string
+    	Comma-separated allowed CORS origins (e.g., https://switchframe.dev); empty = allow all
+  -api-token string
+    	Bearer token for API authentication (env: SWITCHFRAME_API_TOKEN)
+  -asr-default-backend string
+    	Default ASR backend (parakeet or whisper) (default "parakeet")
+  -asr-sidecar string
+    	Path to switchframe-asr sidecar binary
+  -asr-sidecar-model-dir string
+    	Path to streaming ASR model directory
+  -asr-whisper-models-dir string
+    	Whisper GGML models directory for ASR sidecar
+  -asr-whisper-threads int
+    	Whisper inference threads (0 = auto: min(NumCPU, 8))
+  -cache-dir string
+    	persistent cache directory for mmap'd LUTs and decoded assets (default "/data/switchframe/cache")
+  -captions
+    	Enable CEA-608/708 closed captioning
+  -cef-binary string
+    	Path to switchframe-cef sidecar binary (relative to the switchframe binary or absolute). Empty = use built-in Linux default.
+  -cef-templates-dir string
+    	Path to HTML5 graphics templates directory. Empty = use built-in Linux default.
+  -clip-ephemeral-ttl duration
+    	TTL for ephemeral clips (default 24h) (default 24h0m0s)
+  -clip-storage-max int
+    	Maximum clip storage in bytes (default 10GB) (default 10737418240)
+  -color-format string
+    	Pipeline color format profile (standard, standard-hevc, professional) (default "standard")
+  -control-plane-secret string
+    	shared secret authorizing POST /api/peer/force-leader; empty disables the endpoint
+  -demo
+    	Start with simulated camera sources
+  -demo-video string
+    	Directory containing MPEG-TS clips for real video demo (requires --demo)
+  -domain string
+    	Public domain for connection URLs (e.g., switchframe.dev)
+  -engine-label string
+    	engine label for active-active pairs ("a" or "b"); empty = single-engine
+  -format string
+    	Video standard (e.g. 1080p29.97, 1080p25, 720p59.94) (default "1080p29.97")
+  -frame-sync
+    	Enable freerun frame synchronizer (aligns sources to common frame boundary)
+  -frc-quality string
+    	Frame rate conversion: none, nearest, blend, mcfi (default "none")
+  -http-addr string
+    	HTTP/1.1 fallback listen address (requires --http-fallback) (default ":8081")
+  -http-fallback
+    	Start a plain HTTP/1.1 API server on TCP :8081 for curl/scripts
+  -log-level string
+    	Log level: debug, info, warn, error (default "info")
+  -low-latency-sync
+    	Use source-driven frame sync (lower latency, less smooth output)
+  -mxl-discover
+    	List available MXL flows and exit
+  -mxl-domain string
+    	MXL shared memory domain path (default "/dev/shm/mxl")
+  -mxl-output string
+    	MXL flow name for program output
+  -mxl-output-audio-def string
+    	Path to MXL output audio flow definition JSON
+  -mxl-output-video-def string
+    	Path to MXL output video flow definition JSON
+  -mxl-sources string
+    	Comma-separated MXL source specs as videoUUID or videoUUID:audioUUID or videoUUID:audioUUID:dataUUID (env: SWITCHFRAME_MXL_SOURCES)
+  -neural-key-model string
+    	Path to CorridorKey ONNX model for neural green screen keying (requires CUDA + TensorRT)
+  -output-bitrate int
+    	Program output encoder bitrate in bps (0 = auto from resolution)
+  -output-gop-secs int
+    	Program output GOP/keyframe interval in seconds (1, 2, or 4; 0 = default 2)
+  -output-preset string
+    	Program output encoder preset (low-latency, balanced, quality; empty = balanced)
+  -output-timecode
+    	Enable SMPTE 12M timecode insertion in program output
+  -peer-cert-hash string
+    	SHA-256 hex of the peer engine's leaf cert DER (comma-separated pair during rotation); required when --peer-engine-url uses a private IP
+  -peer-engine-url string
+    	URL of the peer engine for inter-engine health monitoring (e.g., https://engine-b:8080)
+  -playout
+    	Enable playout subsystem
+  -playout-asrun-retention int
+    	As-run log retention in days (default 30)
+  -playout-cache-max int
+    	Playout cache max size in GB (default 200)
+  -preview-bitrate int
+    	Preview encode bitrate in bps (default 500000)
+  -preview-frame-interval int
+    	Preview encode every Nth frame (1=all, 2=half rate) (default 1)
+  -preview-proxy
+    	Enable low-bitrate preview encoding for browser source previews
+  -preview-resolution string
+    	Preview encode resolution (e.g. 480p, 360p, 720p) (default "480p")
+  -ref-clock
+    	Use reference clock for synchronous A/V processing (experimental)
+  -relay-bitrate int
+    	Relay encode bitrate in bps for SRT source WebTransport distribution (default 2000000)
+  -relay-resolution string
+    	Relay encode resolution (720p, 480p, 360p, or source for no scaling) (default "720p")
+  -replay-buffer-secs int
+    	Per-source replay buffer duration in seconds (0 to disable, max 300) (default 300)
+  -replay-tmpfs-dir string
+    	Directory for tmpfs-backed replay buffers (use 'none' to disable) (default "/dev/shm/switchframe/replay")
+  -scte104
+    	Enable SCTE-104 on MXL data flows (requires --scte35)
+  -scte35
+    	Enable SCTE-35 insertion
+  -scte35-heartbeat int
+    	Interval between splice_null heartbeats in milliseconds (0 to disable) (default 5000)
+  -scte35-pid int
+    	SCTE-35 PID in MPEG-TS output (default 258)
+  -scte35-preroll int
+    	Default pre-roll in milliseconds for scheduled cues (default 4000)
+  -scte35-verify
+    	Verify SCTE-35 encoding by round-trip decode (default true)
+  -scte35-webhook string
+    	Webhook URL for SCTE-35 event notifications
+  -srt-latency int
+    	Default SRT latency in milliseconds (default 120)
+  -srt-listen string
+    	SRT listener address for incoming push connections (e.g., :6464)
+  -srt-output-ports string
+    	Allowed SRT output port range (e.g., 7464-7467)
+  -st2110-inputs int
+    	Number of ST 2110 input receivers (default 4)
+  -st2110-ip string
+    	Local IP address for ST 2110 TX sessions
+  -st2110-nmos-port int
+    	NMOS API HTTP port for IS-04/IS-05 (default 8090)
+  -st2110-port string
+    	DPDK port identifier for ST 2110 (e.g. 0000:31:00.0)
+  -st2110-ptp string
+    	PTP mode for ST 2110 (auto, l2, l4, none) (default "auto")
+  -tls-cert string
+    	Path to TLS certificate PEM file (e.g. from mkcert)
+  -tls-key string
+    	Path to TLS private key PEM file
+  -warm-cache
+    	Pre-generate caches (ST map LUTs) for all resolutions and exit
