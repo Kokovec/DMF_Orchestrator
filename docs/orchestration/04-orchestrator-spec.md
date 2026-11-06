@@ -87,7 +87,7 @@ allocation; new workloads take the lowest free values. `finalise` releases them.
 
 - `uid = gid`, from `workloadUids`. `hostname = <id>.<baseDomain>`, `domain = <id>`.
 - `plan` adds a port check to the existing UID and domain check: its task name says ports, but today it doesn't check them.
-- A hand-written workload's ports (`news-studio`: 8443, 6464) count as taken if its namespace exists.
+- A hand-written workload's UID, domain and ports (`news-studio`: 20001, 8443, 6464) always count as taken: the compiler can't see the cluster, and the workload could be deployed later.
 
 ## Sizing (`sizing.py`)
 
@@ -96,6 +96,15 @@ allocation; new workloads take the lowest free values. `finalise` releases them.
 - **Quota:** `requests.cpu` and `requests.memory` = sum of pod requests + 20%, rounded up. Compare `news-studio`'s hand-set 7 CPU and 10 GiB when reviewing: the new value will be lower, and that is correct as long as pods schedule.
 - **Volumes:** state PVC = `clips.storageMaxGB + 1` GiB, floor 5. Recordings PVC = `recording.storageGiB`. `/cache` emptyDir `sizeLimit` = `playout.cacheMaxGB + 2` GiB when on, otherwise 5 GiB.
 - **Replay tmpfs:** the chart's 1 GiB stays for stage 4. Stage 6 measures use at 300 s for 3 sources, then sets a formula. It counts against pod memory.
+
+## Where generated files go
+
+Stage 4 onward: the compiler writes to `workloads/generated/<id>.{yaml,config.json,source.xml}`, which
+is git-ignored, because generated files are build output, archived by `finalise`. Hand-written
+workloads stay in `workloads/<id>.yaml`. One resolver, `scripts/workload-file.sh <id>`, is used by the
+playbooks, Terraform's caller and the scripts. It returns the hand-written file, else the generated
+one, and fails if both exist. That replaces rule 7's header check. Stage 3 wrote to `workloads/`;
+stage 4 moves the output.
 
 ## Generated workload (`dmf.local/v1alpha2`)
 
@@ -139,7 +148,9 @@ spec:
 
 **Keep these literal formats:** `scripts/windows-browser.sh` and `scripts/facility.sh` parse this
 file with `awk`. The workload's `hostname:` must be the first line matching `^ *hostname:`, and each
-function must have `- name:` on the line immediately before `kind:`.
+function must have `- name:` on the line immediately before `kind:`. The compiler checks its own
+output the way both lines read it. Stage 4 anchors `facility.sh`'s match to `^ *kind: *switchframe *$`,
+because today a function named `switchframe` also matches.
 
 Write both files atomically. Also copy the source to `workloads/<id>.source.xml`. Add `workloads/*.config.json` and `*.source.xml` to what `finalise` archives.
 
@@ -150,6 +161,7 @@ Write both files atomically. Also copy the source to `workloads/<id>.source.xml`
 - `formats` adds 720p and 2160p. Flow definitions take width and height from the format, not the hard-coded 1920×1080.
 - `configure.programSource` no longer assumes `sources[0]` exists: an SRT-only workload has none, which breaks today.
 - Reads `configFile` and passes its content to the chart; a changed config rolls the reconciler only.
+- The chart quotes every arg, so a value containing `: ` can't break the rendered YAML. Its `mxlSources` helper keeps the data flow (`video:audio:data`).
 - Stage 5: creates `Secret workload-refs` from `.state/secrets/<id>.yaml`. Values reach Terraform state, which is local, git-ignored and already holds this workload's tokens.
 
 `ansible/playbooks/workload-provision.yml`:
@@ -181,10 +193,15 @@ Loop: every 5 s for the first 2 minutes after start, then every 30 s:
 
 Requirements:
 - Never fails the pod and never exits on API errors. Logs as JSON. Doesn't overwrite operator changes: a setting is applied once per appearance, not every loop.
+- Redacts passphrases and RTMP URLs from anything it logs, including API responses.
 - Exposes `dmf_reconcile_pending` and `dmf_reconcile_errors_total` at `:9103/metrics`, added to the ServiceMonitor.
 - Uses the current hook's auth and retry logic as its starting point.
 
-`config.json`:
+`config.json`: explicit calls with `{key}` placeholders the reconciler resolves at runtime,
+`program: {input, ref}`, and destinations as `{name, body, secretFields | secretUrlSuffix}`. The
+reference is `tools/dmf_compile/tests/golden/full-settings.config.json`, which is checked
+field by field against the Go request structs. The example below is the original sketch, kept for
+the intent of each part; where it differs, the golden file wins.
 
 ```json
 {

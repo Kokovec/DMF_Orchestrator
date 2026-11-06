@@ -45,7 +45,7 @@ at the end.
 | `mode` = listener | `--srt-listen` with an allocated port; one shared listener | 5 |
 | `streamId` (now required) | Key `srt:<streamId>` | 5 |
 | `latencyMs` (listener) | Most common value to `--srt-latency`; others `PUT /api/sources/{key}/srt` | 5 |
-| `mode` = caller; `address`, `streamId`, `latencyMs`, `inputBandwidthMbps`, `overheadPercent` | `POST /api/sources` once; the product persists it. `inputBW` = Mbit/s × 125000 | 5 |
+| `mode` = caller; `address` (`host:port`), `streamId`, `latencyMs`, `inputBandwidthMbps`, `overheadPercent` | `POST /api/sources` once; the product persists it. `inputBW` = Mbit/s × 125000 | 5 |
 
 ### Every source (`<src>.source`, `.audio`, `.key`)
 
@@ -53,16 +53,16 @@ An SRT listener source has no API object until its encoder connects. The reconci
 
 | Option | Target | Stage |
 |---|---|---|
-| `source.label` | `POST /api/sources/{key}/label`, 64 characters at most | 4 |
+| `source.label` | `POST /api/sources/{key}/label`. The product's limit is 128 bytes; the compiler refuses longer UTF-8 | 4 |
 | `source.position` | `PUT /api/sources/{key}/position` | 6 |
 | `source.delayMs` | `POST /api/sources/{key}/delay` | 6 |
 | `audio.trimDb`, `.afv` | `POST /api/audio/trim`, `POST /api/audio/afv` | 6 |
 | `audio.delayMs` | `PUT /api/audio/{source}/audio-delay` | 6 |
 | `audio.highPass` | `PUT /api/audio/{source}/hpf` | 6 |
 | `audio.gate` | `PUT /api/audio/{source}/gate` | 6 |
-| `audio.eq.low`, `.mid`, `.high` | `PUT /api/audio/{source}/eq`, one call per band | 6 |
+| `audio.eq.low`, `.mid`, `.high` | `PUT /api/audio/{source}/eq`, one call per band, `band` 0, 1, 2 | 6 |
 | `audio.compressor` | `PUT /api/audio/{source}/compressor` | 6 |
-| `key.type` = chroma, luma | `PUT /api/sources/{source}/key`; `off`: `DELETE` | 6 |
+| `key.type` = chroma, luma | `PUT /api/sources/{source}/key` with `enabled: true`; `off`: `DELETE`, where a 404 means already off | 6 |
 | `key.type` = neural | **G `neural-key`** | Not built |
 
 ### Encoder and outputs
@@ -71,12 +71,12 @@ An SRT listener source has no API object until its encoder connects. The reconci
 |---|---|---|
 | `encoder.encoder.bitrateMbps` | `--output-bitrate`, bit/s | 5 |
 | `.gopSeconds`, `.preset`, `.timecode` | `--output-gop-secs`, `--output-preset`, `--output-timecode` | 5 |
-| `srt-out.srt.*`, mode = caller | `POST /api/output/destinations` type `srt-caller`, then `…/{id}/start`. Not persisted, so the reconciler recreates it; matched by `name` = block id. `maxBandwidth` in bytes/s | 5 |
-| `srt-out.srt.passphrase` | Secret, in `passphrase` | 5 |
+| `srt-out.srt.*`, mode = caller | `POST /api/output/destinations` type `srt-caller`, then `…/{id}/start`. Not persisted, so the reconciler recreates it; matched by `name` = block id. `maxBandwidth` in bit/s (the product divides by 8). `scte35Enabled` always written: absent means false. Encryption `off` = field absent | 5 |
+| `srt-out.srt.passphrase` | Secret, in `passphrase`. `GET /api/output/destinations` returns it, so nothing this repo logs or archives may contain that response unredacted | 5 |
 | `srt-out`, mode = listener | **G `srt-listener-out`**: the chart opens no output ports | Not built |
 | `rtmp-out.rtmp.url` | Destination type `rtmp`, `url` | 5 |
-| `rtmp-out.rtmp.streamKey` | Secret, in `streamID` | 5 |
-| `recording` on/off; `recording.recording.*` | `POST /api/recording/start` `{outputDir: "/recordings", rotateAfterMins, maxFileSizeMB, filenamePrefix}`; restarted by the reconciler when stopped unexpectedly | 5 |
+| `rtmp-out.rtmp.streamKey` | Secret, appended to `url`: the product ignores `streamID` for RTMP. The product masks the URL in its own logs, but `GET /api/output/destinations` returns it in full; same redaction rule as the passphrase | 5 |
+| `recording` on/off; `recording.recording.*` | `POST /api/recording/start` `{outputDir: "/recordings", rotateAfterMins, maxFileSizeMB, filenamePrefix}`. `rotateAfterMins: 0` means 60 in the product, so the minimum is 1; restarted by the reconciler when stopped unexpectedly | 5 |
 | `recording.recording.storageGiB` (new, required when on) | Size of a new recordings PVC | 5 |
 
 ### Other features
@@ -85,12 +85,12 @@ An SRT listener source has no API object until its encoder connects. The reconci
 |---|---|---|
 | `audio.master.limiter` | `PUT /api/audio/limiter` | 6 |
 | `replay` on/off; `bufferSeconds` | `--replay-buffer-secs` (0 when off) | 6 |
-| `replay.replay.shutterAngle` | `PUT /api/replay/shutter-angle` | 6 |
-| `clips.clips.storageMaxGB` | `--clip-storage-max`, bytes. Clips live in the state directory, so the state PVC = this + 1 GiB | 6 |
-| `clips.clips.ephemeralTtlHours` | `--clip-ephemeral-ttl` | 6 |
+| `replay.replay.shutterAngle` | `PUT /api/replay/shutter-angle` `{angle}` | 6 |
+| `clips.clips.storageMaxGB` | `--clip-storage-max`, bytes, where GB = 2³⁰. Clips live in the state directory, so the state PVC = this + 1 GiB | 6 |
+| `clips.clips.ephemeralTtlHours` | `--clip-ephemeral-ttl` as a duration, e.g. `48h` | 6 |
 | `captions` on/off; `captions.captions.mode` (`passthrough`, `author`) | On: `--captions`, `POST /api/captions/mode`. Off: neither | 6 |
 | `scte35` on/off; `pid`, `prerollMs`, `heartbeatMs`, `verify`, `webhookUrl` | `--scte35`, `--scte35-pid`, `--scte35-preroll`, `--scte35-heartbeat`, `--scte35-verify`, `--scte35-webhook` | 6 |
-| `scte35.scte35.defaultRule` | `PUT /api/scte35/rules/default` | 6 |
+| `scte35.scte35.defaultRule` (`pass`, `drop`) | `PUT /api/scte35/rules/default` `{action}`: `pass` → `pass`, `drop` → `delete`. The product's `replace` needs replacement parameters, so it isn't a default | 6 |
 | `playout` on/off; `cacheMaxGB`, `asRunRetentionDays` | `--playout`, `--playout-cache-max`, `--playout-asrun-retention`. `/cache` is sized to fit | 6 |
 | `control.control.preview*` | `--preview-proxy`, `--preview-resolution`, `--preview-bitrate` (bit/s) | 4 |
 | `control.control.relay*` | `--relay-resolution`, `--relay-bitrate` (bit/s) | 6 |
@@ -132,10 +132,12 @@ cues, comms, DVE and preset recall, macros, colour grading and ST map. These sta
 
 ## Ignored for now
 
-Accepted and carried in the XML, but they change nothing on this single-host facility. The compiler
-gives one warning for each that is set: `network.*`, `payload.*`, `placement.*`,
+Accepted and carried in the XML, but they change nothing on this single-host facility. The toolkit
+publishes defaults for some of them, so the compiler warns once for each only when its value differs
+from the toolkit's default: `network.*`, `payload.*`, `placement.*`,
 `expectations.resilience` other than `none`, `discovery.labels`, `discovery.register: false`,
-`flows[].historyMs`, and `dependencies`.
+and `dependencies`. `flows[].historyMs` gets no warning: the schema requires it, so every workload
+has one.
 
 `discovery.register: false` can't be honoured yet because `mxl-flow-agent` registers every flow in the domain.
 

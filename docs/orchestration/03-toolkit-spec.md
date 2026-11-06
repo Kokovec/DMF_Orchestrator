@@ -97,6 +97,9 @@ are left to compile rule 5.
 - Add `engine.engine.onAirAtStart`: string, `x-options: "inputs"`, meaning the choices are the instance's input copies. Default: the first. Publishing fails if it names a copy not in use.
 - Add `recording.recording.storageGiB`: integer ≥ 1, required, `x-audience: orchestrator`, default 50.
 - `srt-src.srt.streamId`: required in both modes, pattern `^[A-Za-z0-9_-]{1,64}$`.
+- `srt-src.srt.address` (caller): `host:port`, pattern `^[A-Za-z0-9.-]+:[0-9]{1,5}$`.
+- `scte35.scte35.defaultRule`: `pass` or `drop` only.
+- `recording.recording.rotateAfterMinutes`: minimum 1, because the product treats 0 as 60.
 - `srt-out.srt.streamId`, `rtmp-out`: unchanged.
 - Remove `control.control.access.*` and `control.control.allowedOrigins`.
 - Remove `off` from `captions.captions.mode`: the feature toggle is how captions are turned off. Default stays `passthrough`.

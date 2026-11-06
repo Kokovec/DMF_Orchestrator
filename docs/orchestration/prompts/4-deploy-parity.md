@@ -16,6 +16,8 @@ Build, for options marked stage 4 only:
 - `plan`'s port check, and `make deploy`.
 - `mxl-testsrc`'s pattern and overlay from the generated file.
 - `finalise` releasing the allocation and archiving source files.
+- Generated files move to `workloads/generated/` (git-ignored), with one resolver, `scripts/workload-file.sh`, used everywhere a workload file is read, as in the spec's "Where generated files go". Delete stage 3's leftover `workloads/studio-a.*` once the compiler writes to the new place.
+- Anchor `facility.sh`'s `kind: switchframe` match. Quote every arg in the chart. Keep the data flow in its `mxlSources` helper.
 
 `news-studio.yaml` must keep working with no edits: `terraform plan` for it must show no changes against what the old code would create, other than what you explain.
 
