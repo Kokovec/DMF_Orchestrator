@@ -85,32 +85,33 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- include "switchframe.containerSecurityContext" . | nindent 12 }}
+          # Every arg quoted: a value containing ": " or "#" must stay one string.
           args:
-            - --addr=:{{ .Values.switchframe.quicPort }}
-            - --http-fallback
-            - --http-addr=:{{ .Values.switchframe.httpPort }}
-            - --admin-addr=0.0.0.0:{{ .Values.switchframe.adminPort }}
+            - {{ printf "--addr=:%v" .Values.switchframe.quicPort | quote }}
+            - "--http-fallback"
+            - {{ printf "--http-addr=:%v" .Values.switchframe.httpPort | quote }}
+            - {{ printf "--admin-addr=0.0.0.0:%v" .Values.switchframe.adminPort | quote }}
             {{- if .Values.ingress.hostname }}
-            - --allowed-origins=https://{{ .Values.ingress.hostname }}
+            - {{ printf "--allowed-origins=https://%s" .Values.ingress.hostname | quote }}
             {{- end }}
-            - --format={{ .Values.switchframe.format }}
-            - --log-level={{ .Values.switchframe.logLevel }}
-            - --cache-dir=/cache
-            - --replay-tmpfs-dir=/replay
-            - --mxl-domain={{ $domain }}
+            - {{ printf "--format=%s" .Values.switchframe.format | quote }}
+            - {{ printf "--log-level=%s" .Values.switchframe.logLevel | quote }}
+            - "--cache-dir=/cache"
+            - "--replay-tmpfs-dir=/replay"
+            - {{ printf "--mxl-domain=%s" $domain | quote }}
             {{- with include "switchframe.mxlSources" . }}
-            - --mxl-sources={{ . }}
+            - {{ printf "--mxl-sources=%s" . | quote }}
             {{- end }}
             {{- if .Values.mxl.output.enabled }}
-            - --mxl-output={{ .Values.mxl.output.name }}
-            - --mxl-output-video-def=/etc/switchframe/flows/output_video.json
-            - --mxl-output-audio-def=/etc/switchframe/flows/output_audio.json
+            - {{ printf "--mxl-output=%s" .Values.mxl.output.name | quote }}
+            - "--mxl-output-video-def=/etc/switchframe/flows/output_video.json"
+            - "--mxl-output-audio-def=/etc/switchframe/flows/output_audio.json"
             {{- end }}
             {{- if .Values.switchframe.srtPort }}
-            - --srt-listen=:{{ .Values.switchframe.srtPort }}
+            - {{ printf "--srt-listen=:%v" .Values.switchframe.srtPort | quote }}
             {{- end }}
             {{- range .Values.switchframe.extraArgs }}
-            - {{ . }}
+            - {{ . | quote }}
             {{- end }}
           env:
             - name: APP_ENV
@@ -231,7 +232,12 @@ spec:
           emptyDir: {}
           {{- end }}
         - name: cache
+          {{- if .Values.cache.size }}
+          persistentVolumeClaim:
+            claimName: {{ $fullname }}-cache
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         - name: replay
           emptyDir:
             medium: Memory

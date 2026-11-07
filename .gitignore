@@ -1,5 +1,7 @@
 .tools/
 .state/
+# Compiler output (make import): build artefacts, archived by make finalise.
+workloads/generated/
 **/.terraform/
 *.tfstate
 *.tfstate.*

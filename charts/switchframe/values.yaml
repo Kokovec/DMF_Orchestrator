@@ -54,6 +54,17 @@ persistence:
   size: 5Gi
   storageClass: ""        # "" = cluster default (k3s local-path)
 
+# /cache: ST map LUTs (SwitchFrame prewarms about 16 GiB at 1080p on every start and skips
+# tables already there), decoded assets, the playout cache. With a size it's a PVC, so the
+# prewarm happens once per workload; "" keeps an unlimited emptyDir (regenerated each start).
+# Not archived by FINALISE: it's regenerable.
+cache:
+  size: ""                # e.g. 18Gi (tools/dmf_compile sizing)
+
+# Compiled SwitchFrame config (workloads/generated/<id>.config.json), rendered as the
+# <release>-config ConfigMap for the reconciler (stage 5). Empty for hand-written workloads.
+config: {}
+
 replayTmpfsSize: 1Gi
 
 service:

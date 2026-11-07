@@ -39,6 +39,9 @@ class TempRepo:
         self.dir = tempfile.TemporaryDirectory(prefix="dmf-compile-")
         self.path = Path(self.dir.name)
         (self.path / "workloads").mkdir()
+        self.gen = self.path / "workloads" / "generated"
+        (self.path / "scripts").mkdir()
+        shutil.copy2(REPO / "scripts" / "workload-file.sh", self.path / "scripts")
         shutil.copytree(REPO / "facility", self.path / "facility")
         shutil.copy(REPO / "workloads" / "news-studio.yaml", self.path / "workloads")
 

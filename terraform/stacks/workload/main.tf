@@ -10,17 +10,26 @@ locals {
   host        = local.access.hostname
   roles       = ["director", "audio", "graphics", "captioner", "viewer"]
 
-  # Video standards understood by both SwitchFrame (--format) and the flow definitions.
-  formats = {
-    "1080p23.976" = { num = 24000, den = 1001 }
-    "1080p24"     = { num = 24, den = 1 }
-    "1080p25"     = { num = 25, den = 1 }
-    "1080p29.97"  = { num = 30000, den = 1001 }
-    "1080p30"     = { num = 30, den = 1 }
-    "1080p50"     = { num = 50, den = 1 }
-    "1080p59.94"  = { num = 60000, den = 1001 }
-    "1080p60"     = { num = 60, den = 1 }
+  # Video standards understood by both SwitchFrame (--format) and the flow definitions
+  # (docs/orchestration/02-switchframe-options.md, engine).
+  rates = {
+    "23.976" = { num = 24000, den = 1001 }
+    "24"     = { num = 24, den = 1 }
+    "25"     = { num = 25, den = 1 }
+    "29.97"  = { num = 30000, den = 1001 }
+    "30"     = { num = 30, den = 1 }
+    "50"     = { num = 50, den = 1 }
+    "59.94"  = { num = 60000, den = 1001 }
+    "60"     = { num = 60, den = 1 }
   }
+  sizes = {
+    "720"  = { width = 1280, height = 720, rates = ["25", "29.97", "30", "50", "59.94", "60"] }
+    "1080" = { width = 1920, height = 1080, rates = keys(local.rates) }
+    "2160" = { width = 3840, height = 2160, rates = ["25", "29.97", "30", "50", "59.94", "60"] }
+  }
+  formats = merge([for h, sz in local.sizes : {
+    for r in sz.rates : "${h}p${r}" => merge(local.rates[r], { width = sz.width, height = sz.height })
+  }]...)
 
   functions = { for f in local.spec.functions : f.name => f }
   # Input Media Functions: mxl-testsrc (GStreamer test pattern + tone) and
@@ -34,10 +43,30 @@ locals {
   mixer     = try(local.mixers[local.mixer_key], { format = "1080p29.97", sources = [] })
   rate      = try(local.formats[local.mixer.format], local.formats["1080p29.97"])
 
+  # Generated workloads (dmf.local/v1alpha2) come with the compiled SwitchFrame config, beside
+  # the workload file. Hand-written ones have none.
+  generated = can(local.mixer.configFile)
+  config    = local.generated ? jsondecode(file("${dirname(var.workload_file)}/${local.mixer.configFile}")) : null
+
   # Flow identity (JT-NM / DMF RA: uniquely identified Flows of timestamped Grains).
-  # Deterministic UUIDs so re-provisioning a workload keeps the same flow ids.
+  # A generated workload carries the IDs DMF Toolkit published (decision D7). Otherwise
+  # deterministic UUIDs, so re-provisioning a workload keeps the same flow ids.
   flow_id = { for pair in setproduct(keys(local.functions), ["video", "audio", "data"]) :
-  "${pair[0]}/${pair[1]}" => uuidv5("url", "dmf://${local.name}/${pair[0]}/${pair[1]}") }
+    "${pair[0]}/${pair[1]}" => try(local.functions[pair[0]].flows[pair[1]],
+  uuidv5("url", "dmf://${local.name}/${pair[0]}/${pair[1]}")) }
+
+  # Programme source and source labels, restored by the pod's postStart hook. A generated
+  # workload names its on-air source (absent when its key is only known at runtime) and takes
+  # labels from the config; a hand-written one starts on its first source, labelled by function.
+  program_source = local.generated ? try(local.mixer.programSource, "") : (
+    length(local.mixer.sources) > 0 ? "mxl:${local.flow_id["${local.mixer.sources[0]}/video"]}" : ""
+  )
+  labels = local.generated ? flatten([for s in local.config.sources : [
+    for c in s.apply : { source = s.ref.key, label = c.body.label } if c.path == "/api/sources/{key}/label"
+    ] if s.ref.kind == "mxl"]) : [for s in local.mixer.sources : {
+    source = "mxl:${local.flow_id["${s}/video"]}"
+    label  = try(local.functions[s].label, s)
+  }]
 
   video_flow = { for fn, f in local.functions : fn => {
     id             = local.flow_id["${fn}/video"]
@@ -48,13 +77,13 @@ locals {
     parents        = []
     media_type     = "video/v210"
     grain_rate     = { numerator = local.rate.num, denominator = local.rate.den }
-    frame_width    = 1920, frame_height = 1080
+    frame_width    = local.rate.width, frame_height = local.rate.height
     interlace_mode = "progressive"
     colorspace     = "BT709"
     components = [
-      { name = "Y", width = 1920, height = 1080, bit_depth = 10 },
-      { name = "Cb", width = 960, height = 1080, bit_depth = 10 },
-      { name = "Cr", width = 960, height = 1080, bit_depth = 10 },
+      { name = "Y", width = local.rate.width, height = local.rate.height, bit_depth = 10 },
+      { name = "Cb", width = local.rate.width / 2, height = local.rate.height, bit_depth = 10 },
+      { name = "Cr", width = local.rate.width / 2, height = local.rate.height, bit_depth = 10 },
     ]
   } }
 
@@ -302,7 +331,7 @@ resource "helm_release" "source" {
     command   = each.value.kind == "mxl-syncsrc" ? ["/usr/local/bin/mxl-syncgen"] : ["/usr/local/bin/mxl-gst-testsrc"]
     args = concat(
       ["-d", local.domain_path, "-v", "/etc/mxl/flows/video.json", "-a", "/etc/mxl/flows/audio.json"],
-      each.value.kind == "mxl-testsrc" ? ["-p", try(each.value.pattern, "smpte"), "-t", try(each.value.label, each.key), "-g", each.key] : [],
+      each.value.kind == "mxl-testsrc" ? ["-p", try(each.value.pattern, "smpte"), "-t", try(each.value.overlayText, each.value.label, each.key), "-g", each.key] : [],
     )
     flowDefs = { "video.json" = local.video_flow[each.key], "audio.json" = local.audio_flow[each.key] }
     resources = try(each.value.resources, {
@@ -337,7 +366,7 @@ resource "helm_release" "mixer" {
   namespace = kubernetes_namespace_v1.workload.metadata[0].name
   chart     = "${var.charts_dir}/switchframe"
   timeout   = 600
-  values = [yamlencode({
+  values = [yamlencode(merge({
     chartHash   = local.chart_hash["switchframe"]
     workload    = local.name
     image       = { repository = local.images.switchframe, tag = var.image_tag }
@@ -345,18 +374,16 @@ resource "helm_release" "mixer" {
     podSecurity = { uid = local.mx.uid, gid = local.mx.gid }
     # Restored by the pod itself on every start: SwitchFrame forgets both.
     configure = {
-      programSource = "mxl:${local.flow_id["${local.mixer.sources[0]}/video"]}"
-      labels = [for s in local.mixer.sources : {
-        source = "mxl:${local.flow_id["${s}/video"]}"
-        label  = try(local.functions[s].label, s)
-      }]
+      programSource = local.program_source
+      labels        = local.labels
     }
     mxl = {
       domainPath = local.domain_path
-      sources = [for s in local.mixer.sources : {
+      # A generated workload lists its inputs' flows as wired, data flow included.
+      sources = try(local.mixer.mxlSources, [for s in local.mixer.sources : {
         video = local.flow_id["${s}/video"]
         audio = local.flow_id["${s}/audio"]
-      }]
+      }])
       output = {
         enabled   = try(local.mixer.programOutput, true)
         name      = "program"
@@ -374,6 +401,7 @@ resource "helm_release" "mixer" {
         gpu            = try(local.spec.resourceProfile.gpu, 0)
       },
       can(local.mixer.resources) ? { resources = local.mixer.resources } : {},
+      can(local.mixer.goMemLimit) ? { goMemLimit = local.mixer.goMemLimit } : {},
     )
     ingress = { hostname = local.host }
     sso = {
@@ -385,7 +413,17 @@ resource "helm_release" "mixer" {
       bridgeImage    = { repository = local.images.sso_bridge, tag = var.image_tag }
       bridgeImageId  = try(local.image_ids["sso-bridge"], "")
     }
-  })]
+    },
+    # Generated workloads only, so a hand-written one's values stay as they were. A for
+    # expression, because a conditional can't return this object or {}: their types differ.
+    [for g in(local.generated ? [true] : []) : {
+      # The compiled config, for the reconciler (stage 5). Nothing in the pod reads it yet.
+      config      = local.config
+      persistence = { size = "${local.mixer.volumes.stateGi}Gi" }
+      cache       = { size = "${local.mixer.volumes.cacheGi}Gi" }
+    }]...
+
+  ))]
   # Sources must be writing before SwitchFrame opens their flows.
   depends_on = [helm_release.source, kubernetes_secret_v1.sso, keycloak_group_memberships.role, keycloak_openid_group_membership_protocol_mapper.groups]
 }

@@ -44,7 +44,7 @@ class Allocation(RepoTest):
         self.repo.compile_and_write(Doc().bytes())
         self.repo.compile_and_write(Doc().rename("studio-b").bytes())
         allocate.release(self.repo.path, "studio-a")
-        (self.repo.path / "workloads" / "studio-a.yaml").unlink()
+        (self.repo.gen / "studio-a.yaml").unlink()
         c = self.repo.compile(Doc().rename("studio-c").bytes())
         self.assertEqual(self.alloc(c), (20002, 8444, 6465))
 

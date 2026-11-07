@@ -22,7 +22,7 @@ start)
   echo "Waiting for $WORKLOAD (first start after a stop takes about a minute)..."
   # exec reaches the running container through the kubelet. Pod status can't be
   # trusted here: straight after a restart it still shows the old "Running".
-  MIXER=$(awk '/kind: *switchframe/ {print prev} {if ($1=="-" && $2=="name:") prev=$3}' "$ROOT/workloads/$WORKLOAD.yaml")
+  MIXER=$(awk '/^ *kind: *switchframe *$/ {print prev} {if ($1=="-" && $2=="name:") prev=$3}' "$("$ROOT/scripts/workload-file.sh" "$WORKLOAD")")
   for _ in $(seq 1 60); do
     if kubectl -n "$NS" exec "deploy/$MIXER" -c switchframe -- sh -c \
         'curl -sf -H "Authorization: Bearer $SWITCHFRAME_API_TOKEN" http://127.0.0.1:8081/api/switch/state' 2>/dev/null \

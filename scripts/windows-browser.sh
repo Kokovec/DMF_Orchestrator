@@ -20,7 +20,7 @@ DRY_RUN="${2:-}"
 
 command -v powershell.exe >/dev/null || { echo "Not running under WSL (no powershell.exe)." >&2; exit 1; }
 
-HOST=$(awk '/^ *hostname:/ {print $2; exit}' "$ROOT/workloads/$WORKLOAD.yaml")
+HOST=$(awk '/^ *hostname:/ {print $2; exit}' "$("$ROOT/scripts/workload-file.sh" "$WORKLOAD")")
 DOMAIN="${HOST#*.}"
 IP=$(kubectl -n kube-system get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
 [ -n "$IP" ] || IP=$(ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1)

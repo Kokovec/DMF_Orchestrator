@@ -4,9 +4,14 @@ from oversubscription").
 
 Compares a workload's resource profile (plus its Flow Domain tmpfs, which is
 RAM) with cluster allocatable minus every other workload's reservation
-(ResourceQuota "dmf-reservation"). Prints a JSON verdict; exit 1 if it won't fit.
+(ResourceQuota "dmf-reservation") and every other workload's Flow Domain.
+Prints a JSON verdict; exit 1 if it won't fit.
 
-usage: capacity.py <workload.yaml> <kubeconfig>
+Flow Domains are read from the tmpfs mounts under the MXL root on this host: all
+workloads share one host (docs/orchestration/README.md, assumption 3), and a
+mount reserves its size whether or not its namespace still exists.
+
+usage: capacity.py <workload.yaml> <kubeconfig> [mxl root, default /var/lib/dmf/mxl]
 """
 import json
 import subprocess
@@ -29,6 +34,20 @@ def kubectl(kubeconfig, *args):
     return json.loads(out)
 
 
+def other_flow_domains(mxl_root, own_domain):
+    """{mount point: size in bytes} of every Flow Domain tmpfs except own_domain's."""
+    out = subprocess.run(["findmnt", "-rn", "-b", "-t", "tmpfs", "-o", "TARGET,SIZE"],
+                         check=True, capture_output=True, text=True).stdout
+    domains = {}
+    root = mxl_root.rstrip("/") + "/"
+    for line in out.splitlines():
+        target, size = line.rsplit(" ", 1)
+        target = target.replace("\\x20", " ")
+        if target.startswith(root) and target != root + own_domain:
+            domains[target] = int(size)
+    return domains
+
+
 def load_workload(path):
     # PyYAML ships with Ansible; import lazily so --help works without it.
     import yaml
@@ -39,9 +58,11 @@ def load_workload(path):
 def main() -> int:
     wl = load_workload(sys.argv[1])
     kubeconfig = sys.argv[2]
+    mxl_root = sys.argv[3] if len(sys.argv) > 3 else "/var/lib/dmf/mxl"
     name = wl["metadata"]["name"]
     prof = wl["spec"]["resourceProfile"]
     shm = wl["spec"]["mediaExchange"]["sizeMiB"] * 2**20
+    domains = other_flow_domains(mxl_root, wl["spec"]["mediaExchange"]["domain"])
 
     nodes = kubectl(kubeconfig, "get", "nodes")["items"]
     alloc_cpu = sum(qty(n["status"]["allocatable"]["cpu"]) for n in nodes)
@@ -63,6 +84,8 @@ def main() -> int:
             reserved_cpu += qty(req.get("cpu", 0))
             reserved_mem += qty(req.get("memory", 0))
 
+    reserved_mem += sum(domains.values())
+
     need_cpu = qty(prof["cpu"])
     need_mem = qty(prof["memory"]) + shm
     free_cpu = alloc_cpu - reserved_cpu
@@ -72,6 +95,7 @@ def main() -> int:
         "fits": need_cpu <= free_cpu and need_mem <= free_mem,
         "requested": {"cpu": need_cpu, "memory_gib": round(need_mem / 2**30, 2), "flow_domain_mib": shm // 2**20},
         "free": {"cpu": round(free_cpu, 2), "memory_gib": round(free_mem / 2**30, 2)},
+        "other_flow_domains_mib": {d.rsplit("/", 1)[1]: v // 2**20 for d, v in sorted(domains.items())},
         "allocatable": {"cpu": alloc_cpu, "memory_gib": round(alloc_mem / 2**30, 2)},
     }
     print(json.dumps(verdict))

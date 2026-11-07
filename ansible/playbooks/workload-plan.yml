@@ -5,7 +5,8 @@
   connection: local
   gather_facts: false
   vars:
-    workload_file: "{{ dmf_repo_root }}/workloads/{{ workload }}.yaml"
+    # Hand-written workloads/<id>.yaml, else the compiler's workloads/generated/<id>.yaml.
+    workload_file: "{{ lookup('ansible.builtin.pipe', dmf_repo_root ~ '/scripts/workload-file.sh ' ~ (workload | quote)) }}"
   tasks:
     - name: Load workload design
       ansible.builtin.set_fact:
@@ -24,7 +25,7 @@
           - dmf_workload.spec.mediaExchange.sizeMiB | int >= 256
           - dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | list | length == 1
           - dmf_workload.spec.access.hostname is match('^[a-z0-9.-]+$')
-        fail_msg: "workloads/{{ workload }}.yaml is not a valid MediaWorkload design"
+        fail_msg: "{{ workload_file }} is not a valid MediaWorkload design"
 
     - name: Check that uid/domain/ports are not used by another provisioned workload
       ansible.builtin.command: >-
@@ -33,13 +34,26 @@
       register: others
       changed_when: false
 
+    # QUIC and SRT are published on the node by each workload's LoadBalancer Service.
+    - name: List the ports other provisioned workloads publish
+      ansible.builtin.command: >-
+        kubectl --kubeconfig {{ dmf_kubeconfig }} get svc -A -l dmf.ebu.ch/workload!={{ workload }},dmf.ebu.ch/workload
+        -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{range .spec.ports[*]}{.port}{"\n"}{end}{end}'
+      register: other_ports
+      changed_when: false
+
     - name: Assert unique workload identity
       ansible.builtin.assert:
         quiet: true
         that:
           - (dmf_workload.spec.mediaExchange.uid | string) not in (others.stdout_lines | map('split', ' ') | map('first') | list)
           - dmf_workload.spec.mediaExchange.domain not in (others.stdout_lines | map('split', ' ') | map('last') | list)
-        fail_msg: "uid or Flow Domain already used by another workload"
+          - (dmf_workload.spec.access.quicPort | string) not in other_ports.stdout_lines
+          - (dmf_workload.spec.access.srtPort | default(0) | string) not in other_ports.stdout_lines
+        fail_msg: >-
+          uid {{ dmf_workload.spec.mediaExchange.uid }}, Flow Domain {{ dmf_workload.spec.mediaExchange.domain }}
+          or port {{ dmf_workload.spec.access.quicPort }}/{{ dmf_workload.spec.access.srtPort | default('-') }}
+          already used by another workload
 
     - name: Capacity check (reserve without oversubscription)
       ansible.builtin.command: "python3 {{ dmf_repo_root }}/ansible/scripts/capacity.py {{ workload_file }} {{ dmf_kubeconfig }}"

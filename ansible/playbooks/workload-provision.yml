@@ -8,9 +8,13 @@
   connection: local
   gather_facts: false
   tasks:
+    - name: Resolve the workload file (hand-written, else generated)
+      ansible.builtin.set_fact:
+        dmf_workload_file: "{{ lookup('ansible.builtin.pipe', dmf_repo_root ~ '/scripts/workload-file.sh ' ~ (workload | quote)) }}"
+
     - name: Read the workload design
       ansible.builtin.set_fact:
-        dmf_workload: "{{ lookup('ansible.builtin.file', dmf_repo_root ~ '/workloads/' ~ workload ~ '.yaml') | from_yaml }}"
+        dmf_workload: "{{ lookup('ansible.builtin.file', dmf_workload_file) | from_yaml }}"
 
 - name: Media Exchange - create Flow Domain
   hosts: dmf_cluster
@@ -27,9 +31,18 @@
   connection: local
   gather_facts: false
   vars:
-    workload_file: "{{ dmf_repo_root }}/workloads/{{ workload }}.yaml"
+    workload_file: "{{ dmf_workload_file }}"
     ns: "wl-{{ workload }}"
     kubectl: "kubectl --kubeconfig {{ dmf_kubeconfig }} -n wl-{{ workload }}"
+    mixer: "{{ dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first }}"
+    # The source the pod puts on air, as Terraform chooses it: a generated workload names it
+    # (programSource, absent when its key is only known at runtime); a hand-written one uses its
+    # first source.
+    program_source: >-
+      {{ (mixer.programSource | default('')) if mixer.configFile is defined
+         else ('mxl:' ~ mixer.sources[0] if (mixer.sources | default([]) | length) > 0 else '') }}
+    # An SRT listener source only exists once its encoder connects.
+    on_air_checkable: "{{ program_source is match('^mxl:') }}"
     expected_flows: >-
       {{ (dmf_workload.spec.functions | selectattr('kind', 'in', ['mxl-testsrc', 'mxl-syncsrc']) | list | length) * 2
          + (2 if (dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first).programOutput | default(true) else 0) }}
@@ -84,9 +97,16 @@
     # The mixer pod restores programme and source labels itself on every start
     # (postStart in charts/switchframe), including restarts PROVISION never sees.
     # SwitchFrame publishes programme flows only with a source on air.
+    - name: CONFIGURE check - programme on air (skipped)
+      when: not (on_air_checkable | bool)
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: not checking that the programme is on air: its source
+          {{ program_source if program_source else '(none known before runtime)' }} may not be connected yet,
+          and programme flows are only published with a source on air.
+
     - name: CONFIGURE check - programme on air
-      vars:
-        mixer: "{{ dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first }}"
+      when: on_air_checkable | bool
       ansible.builtin.command:
         argv:
           - kubectl
@@ -107,13 +127,16 @@
       until: on_air.rc == 0
 
     - name: CONFIGURE check - flows live in the Flow Domain
+      vars:
+        # Without a source on air, the programme flows aren't published.
+        flows_wanted: "{{ (expected_flows | int) - (0 if (on_air_checkable | bool) else 2 if mixer.programOutput | default(true) else 0) }}"
       ansible.builtin.command: >-
         {{ kubectl }} exec deploy/mxl-flow-agent --
         python3 -I -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:9102/metrics').read().decode())"
       register: agent_metrics
       changed_when: false
       until: >-
-        (agent_metrics.stdout_lines | select('match', '^dmf_mxl_flow_active\{.*\} 1$') | list | length) >= (expected_flows | int)
+        (agent_metrics.stdout_lines | select('match', '^dmf_mxl_flow_active\{.*\} 1$') | list | length) >= (flows_wanted | int)
       retries: 24
       delay: 5
 

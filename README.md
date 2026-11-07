@@ -113,6 +113,8 @@ Keep it a name you control or a reserved one such as `.test`. Ansible maps the h
 
 A production is one file in `workloads/`. The included `news-studio` has two test cameras, an A/V sync test source and a SwitchFrame vision mixer.
 
+A workload designed in DMF Toolkit arrives as published XML instead: `make deploy XML=<file or http://localhost url>` compiles it into `workloads/generated/<id>.yaml` (git-ignored) and provisions it; `make import XML=...` only compiles. See [docs/orchestration/](docs/orchestration/).
+
 ```bash
 make plan      WORKLOAD=news-studio   # check the design and capacity, show what will change
 make provision WORKLOAD=news-studio   # create the Flow Domain and start the Media Functions (sudo)
@@ -225,6 +227,8 @@ Several workloads can run side by side. They are isolated by namespace, network 
 
 ```
 workloads/                   DESIGN: one MediaWorkload file per production
+  generated/                 compiled from published XML (make import), git-ignored
+scripts/workload-file.sh     resolves a workload id to its file; used by every reader
 terraform/stacks/
   infrastructure-localhost   Infrastructure: existing host(s) → Ansible inventory
   infrastructure-libvirt     Infrastructure: KVM VMs (cloud-init) → Ansible inventory

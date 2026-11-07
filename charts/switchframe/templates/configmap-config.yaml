@@ -1,0 +1,13 @@
+{{- if .Values.config }}
+# The compiled config (tools/dmf_compile) for the reconciler. Not mounted by the SwitchFrame
+# container, so a change to it doesn't restart the mixer.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "switchframe.fullname" . }}-config
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+data:
+  config.json: |
+    {{- toPrettyJson .Values.config | nindent 4 }}
+{{- end }}

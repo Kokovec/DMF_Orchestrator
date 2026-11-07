@@ -136,7 +136,8 @@ class _Mixer:
 
         clips_gb = self.number("clips.clips.storageMaxGB", None, 1, 10000, integer=True)
         cache_gb = self.number("playout.playout.cacheMaxGB", None, 1, 10000, integer=True) if self.on("playout") else None
-        volumes = sizing.volumes(None if clips_gb is MISSING else clips_gb, self.on("playout"),
+        width, height = self.size or (1920, 1080)
+        volumes = sizing.volumes(width, height, None if clips_gb is MISSING else clips_gb, self.on("playout"),
                                  None if cache_gb is MISSING else cache_gb, recordings_gib)
 
         entry = {"name": self.fid, "kind": "switchframe", "label": self.fn["name"], "format": self.format,

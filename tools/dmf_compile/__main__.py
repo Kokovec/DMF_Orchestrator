@@ -74,16 +74,19 @@ def cmd_compile(args, repo, out):
           f"quota cpu {result.profile['cpu']} memory {result.profile['memory']}", file=out)
     for p in written:
         print(f"wrote {rel(p, repo)}", file=out)
+    if args.id_file:
+        Path(args.id_file).write_text(result.workload_id + "\n")
     return 0
 
 
 def main(argv=None, repo=REPO, out=sys.stdout, err=sys.stderr):
     ap = argparse.ArgumentParser(prog="python -m tools.dmf_compile")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    c = sub.add_parser("compile", help="compile a published workload XML into workloads/<id>.*")
+    c = sub.add_parser("compile", help="compile a published workload XML into workloads/generated/<id>.*")
     c.add_argument("source", help="file path, or http://localhost URL")
     c.add_argument("--facility", default="local")
     c.add_argument("--allow-remote", action="store_true", default=bool(os.environ.get("ALLOW_REMOTE")))
+    c.add_argument("--id-file", help="after a successful compile, write the workload id here (make deploy)")
     e = sub.add_parser("facility-export", help="write .state/facility-<name>.json for DMF Toolkit")
     e.add_argument("--facility", default="local")
     r = sub.add_parser("release", help="release a workload's allocation")

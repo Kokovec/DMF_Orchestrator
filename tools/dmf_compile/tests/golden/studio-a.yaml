@@ -9,7 +9,7 @@ metadata:
   libraryVersion: 4.0.2
 spec:
   resourceProfile: {cpu: '4', memory: 6Gi, gpu: 0}
-  mediaExchange: {domain: studio-a, uid: 20002, gid: 20002, sizeMiB: 2048}
+  mediaExchange: {domain: studio-a, uid: 20002, gid: 20002, sizeMiB: 657}
   access:
     hostname: studio-a.dmf.test
     quicPort: 8444
@@ -55,6 +55,6 @@ spec:
       programSource: mxl:817de3a0-f16a-5268-9d73-6b157c4b3611
       resources: {requests: {cpu: '2', memory: 4Gi}, limits: {cpu: '6', memory: 8Gi}}
       goMemLimit: 6GiB
-      volumes: {stateGi: 11, cacheGi: 5}
+      volumes: {stateGi: 11, cacheGi: 18}
       configFile: studio-a.config.json
       extraArgs: [--preview-proxy]

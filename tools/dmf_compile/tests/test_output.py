@@ -36,18 +36,18 @@ class Golden(RepoTest):
         rc, out, err = self.repo.cli("compile", "examples/studio-a.workload.xml")
         self.assertEqual((rc, err), (0, ""))
         self.golden("studio-a.import.txt", out)
-        wl = self.repo.path / "workloads"
+        wl = self.repo.gen
         self.golden("studio-a.yaml", (wl / "studio-a.yaml").read_text())
         self.golden("studio-a.config.json", (wl / "studio-a.config.json").read_text())
         self.assertEqual((wl / "studio-a.source.xml").read_bytes(), (REPO / "examples" / "studio-a.workload.xml").read_bytes())
 
     def test_reimport_is_identical(self):
         self.repo.cli("compile", "examples/studio-a.workload.xml")
-        first = (self.repo.path / "workloads" / "studio-a.yaml").read_bytes()
+        first = (self.repo.gen / "studio-a.yaml").read_bytes()
         rc, out, _ = self.repo.cli("compile", "examples/studio-a.workload.xml")
         self.assertEqual(rc, 0)
         self.assertIn("allocation (kept): uid/gid 20002, quicPort 8444, srtPort 6465", out)
-        self.assertEqual((self.repo.path / "workloads" / "studio-a.yaml").read_bytes(), first)
+        self.assertEqual((self.repo.gen / "studio-a.yaml").read_bytes(), first)
 
     def test_full_settings(self):
         self.repo.secrets("full-settings", FULL_SETTINGS_SECRETS)
@@ -72,7 +72,7 @@ class Consumers(RepoTest):
         for wid in self.files:
             for config in ("{extends: relaxed, rules: {line-length: disable}}", "{extends: default, rules: {line-length: disable, document-start: disable}}"):
                 with self.subTest(wid=wid, config=config):
-                    p = subprocess.run([yamllint, "-s", "-d", config, str(self.repo.path / "workloads" / f"{wid}.yaml")],
+                    p = subprocess.run([yamllint, "-s", "-d", config, str(self.repo.gen / f"{wid}.yaml")],
                                        capture_output=True, text=True)
                     self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
@@ -83,7 +83,7 @@ class Consumers(RepoTest):
             prog = awk_program(script, var)
             for wid in self.files:
                 with self.subTest(script=script, wid=wid):
-                    out = subprocess.run(["awk", prog, str(self.repo.path / "workloads" / f"{wid}.yaml")],
+                    out = subprocess.run(["awk", prog, str(self.repo.gen / f"{wid}.yaml")],
                                          capture_output=True, text=True, check=True).stdout
                     self.assertEqual(out, expect(wid) + "\n")
 
@@ -93,21 +93,24 @@ class Consumers(RepoTest):
         d.fn("cam1").set("name", "- name: x")
         d.rename("awkward")
         self.repo.compile_and_write(d.bytes())
-        path = str(self.repo.path / "workloads" / "awkward.yaml")
+        path = str(self.repo.gen / "awkward.yaml")
         host = subprocess.run(["awk", awk_program("windows-browser.sh", "HOST"), path], capture_output=True, text=True).stdout
         mixer = subprocess.run(["awk", awk_program("facility.sh", "MIXER"), path], capture_output=True, text=True).stdout
         self.assertEqual((host, mixer), ("awkward.dmf.test\n", "vision-mixer\n"))
 
-    def test_text_the_awk_line_would_misread_is_refused(self):
+    def test_text_that_misled_the_unanchored_awk_line(self):
+        # Before stage 4 facility.sh matched "kind: switchframe" anywhere on a line.
         d = Doc()
         d.fn("cam1").set("name", "kind: switchframe")
-        problems = self.repo.problems(d.bytes())
-        self.assertEqual([(p.rule, p.where) for p in problems], [(8, "workload: generated YAML")])
-        self.assertIn("scripts/facility.sh would read the mixer as ['cam1', 'cam1', 'vision-mixer']", problems[0].message)
+        d.rename("misled")
+        self.repo.compile_and_write(d.bytes())
+        out = subprocess.run(["awk", awk_program("facility.sh", "MIXER"), str(self.repo.gen / "misled.yaml")],
+                             capture_output=True, text=True).stdout
+        self.assertEqual(out, "vision-mixer\n")
 
     # -- workload-plan.yml ---------------------------------------------------------------------
-    def plan(self, wid, others=()):
-        """Runs the plan playbook's own validation tasks against workloads/<wid>.yaml."""
+    def plan(self, wid, others=(), ports=()):
+        """Runs the plan playbook's own validation tasks against the workload file scripts/workload-file.sh resolves."""
         ansible = require_tool(self, "ansible-playbook")
         play = yaml.safe_load((REPO / "ansible" / "playbooks" / "workload-plan.yml").read_text())[0]
         tasks = {t["name"]: t for t in play["tasks"]}
@@ -118,7 +121,8 @@ class Consumers(RepoTest):
                       "vars": play["vars"],
                       "tasks": [tasks[names[0]], tasks[names[1]],
                                 {"name": "Other workloads (what kubectl would list)",
-                                 "ansible.builtin.set_fact": {"others": {"stdout_lines": list(others)}}},
+                                 "ansible.builtin.set_fact": {"others": {"stdout_lines": list(others)},
+                                                              "other_ports": {"stdout_lines": list(ports)}}},
                                 tasks[names[2]]]}]
         with tempfile.NamedTemporaryFile("w", suffix=".yml", dir=self.repo.path, delete=False) as fh:
             yaml.safe_dump(test_play, fh)
@@ -133,26 +137,42 @@ class Consumers(RepoTest):
         news = yaml.safe_load((REPO / "workloads" / "news-studio.yaml").read_text())["spec"]["mediaExchange"]
         for wid in self.files:
             with self.subTest(wid=wid):
-                rc, out = self.plan(wid, [f"{news['uid']} {news['domain']}"])
+                rc, out = self.plan(wid, [f"{news['uid']} {news['domain']}"], ["8443", "6464"])
                 self.assertEqual(rc, 0, out)
                 self.assertRegex(out, r"ok=4 ")
 
     def test_plan_assertions_are_really_evaluated(self):
-        path = self.repo.path / "workloads" / "studio-a.yaml"
+        path = self.repo.gen / "studio-a.yaml"
         text = path.read_text()
         path.write_text(text.replace("uid: 20002, gid: 20002", "uid: 9999, gid: 9999"))
         rc, out = self.plan("studio-a")
         self.assertNotEqual(rc, 0)
         self.assertIn("is not a valid MediaWorkload design", out)
         path.write_text(text)
-        rc, out = self.plan("studio-a", ["20002 other"])
-        self.assertNotEqual(rc, 0)
-        self.assertIn("uid or Flow Domain already used by another workload", out)
+        for others, ports in ((["20002 other"], []), (["20001 news-studio"], ["8444"]), ([], ["6465"])):
+            with self.subTest(others=others, ports=ports):
+                rc, out = self.plan("studio-a", others, ports)
+                self.assertNotEqual(rc, 0)
+                self.assertIn("uid 20002, Flow Domain studio-a or port 8444/6465 already used by another workload", out)
+
+    def test_workload_file_resolver(self):
+        script = str(self.repo.path / "scripts" / "workload-file.sh")
+        run = lambda wid: subprocess.run([script, wid], capture_output=True, text=True)
+        self.assertEqual(run("studio-a").stdout, f"{self.repo.gen / 'studio-a.yaml'}\n")
+        self.assertEqual(run("news-studio").stdout, f"{self.repo.path / 'workloads' / 'news-studio.yaml'}\n")
+        for wid, msg in (("nope", "no workload nope"), ("../etc", "is not valid")):
+            p = run(wid)
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn(msg, p.stderr)
+        (self.repo.gen / "news-studio.yaml").write_text("kind: MediaWorkload\n")
+        p = run("news-studio")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("is both hand-written", p.stderr)
 
     # -- helm ------------------------------------------------------------------------------
     def mixer_values(self, wid):
-        wl = yaml.safe_load((self.repo.path / "workloads" / f"{wid}.yaml").read_text())
-        config = json.loads((self.repo.path / "workloads" / f"{wid}.config.json").read_text())
+        wl = yaml.safe_load((self.repo.gen / f"{wid}.yaml").read_text())
+        config = json.loads((self.repo.gen / f"{wid}.config.json").read_text())
         mixer = next(f for f in wl["spec"]["functions"] if f["kind"] == "switchframe")
         labels = []
         for s in config["sources"]:
@@ -193,19 +213,58 @@ class Consumers(RepoTest):
                 wl, mixer, values = self.mixer_values(wid)
                 out = self.helm("switchframe", values)
                 srcs = ",".join(f"{s['video']}:{s['audio']}" for s in mixer["mxlSources"])
-                for want in (f"--format={mixer['format']}", f"--mxl-sources={srcs}", f"--addr=:{wl['spec']['access']['quicPort']}",
-                             f"--srt-listen=:{wl['spec']['access']['srtPort']}", "--mxl-output=program",
-                             f"--allowed-origins=https://{wid}.dmf.test", f'value: "{mixer["goMemLimit"]}"',
-                             f"memory: {mixer['resources']['limits']['memory']}", f"storage: {mixer['volumes']['stateGi']}Gi",
-                             f'- "{mixer["programSource"]}"'):
-                    self.assertIn(want, out)
-                for arg in mixer["extraArgs"]:
-                    self.assertIn(f"- {arg}\n", out)
                 docs = [d for d in yaml.safe_load_all(out) if d]
-                self.assertIn("Deployment", {d["kind"] for d in docs})
+                dep = next(d for d in docs if d["kind"] == "Deployment")
+                sf = dep["spec"]["template"]["spec"]["containers"][0]
+                access = wl["spec"]["access"]
+                self.assertEqual(sf["args"], [
+                    f"--addr=:{access['quicPort']}", "--http-fallback", "--http-addr=:8081", "--admin-addr=0.0.0.0:9090",
+                    f"--allowed-origins=https://{wid}.dmf.test", f"--format={mixer['format']}", "--log-level=info",
+                    "--cache-dir=/cache", "--replay-tmpfs-dir=/replay", f"--mxl-domain=/var/lib/dmf/mxl/{wid}",
+                    f"--mxl-sources={srcs}", "--mxl-output=program",
+                    "--mxl-output-video-def=/etc/switchframe/flows/output_video.json",
+                    "--mxl-output-audio-def=/etc/switchframe/flows/output_audio.json",
+                    f"--srt-listen=:{access['srtPort']}"] + mixer["extraArgs"])
+                self.assertIn({"name": "GOMEMLIMIT", "value": mixer["goMemLimit"]}, sf["env"])
+                self.assertEqual(sf["resources"], mixer["resources"])
+                self.assertIn(f"storage: {mixer['volumes']['stateGi']}Gi", out)
+                self.assertIn(f'- "{mixer["programSource"]}"', out)
+
+    def test_helm_template_keeps_data_flows_and_quotes_args(self):
+        _, mixer, values = self.mixer_values("studio-a")
+        values["mxl"]["sources"][0]["data"] = "d0000000-0000-0000-0000-000000000001"
+        values["switchframe"]["extraArgs"] = ["--scte35-webhook=http://h/x?a=b: c # d"]
+        out = self.helm("switchframe", values)
+        s0 = values["mxl"]["sources"][0]
+        self.assertIn(f"--mxl-sources={s0['video']}:{s0['audio']}:{s0['data']},", out)
+        dep = next(d for d in yaml.safe_load_all(out) if d and d["kind"] == "Deployment")
+        args = dep["spec"]["template"]["spec"]["containers"][0]["args"]
+        self.assertEqual(args[-1], "--scte35-webhook=http://h/x?a=b: c # d")
+        self.assertTrue(all(isinstance(a, str) for a in args))
+
+    def test_helm_template_sized_volumes_and_config(self):
+        _, mixer, values = self.mixer_values("full-settings")
+        values["cache"] = {"size": f"{mixer['volumes']['cacheGi']}Gi"}
+        values["config"] = json.loads((self.repo.gen / "full-settings.config.json").read_text())
+        docs = [d for d in yaml.safe_load_all(self.helm("switchframe", values)) if d]
+        dep = next(d for d in docs if d["kind"] == "Deployment")
+        cache = next(v for v in dep["spec"]["template"]["spec"]["volumes"] if v["name"] == "cache")
+        self.assertEqual(cache, {"name": "cache", "persistentVolumeClaim": {"claimName": "t-cache"}})
+        pvcs = {d["metadata"]["name"]: d["spec"]["resources"]["requests"]["storage"] for d in docs if d["kind"] == "PersistentVolumeClaim"}
+        self.assertEqual(pvcs, {"t-state": "21Gi", "t-cache": "68Gi"})
+        cm = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"].endswith("-config"))
+        self.assertEqual(json.loads(cm["data"]["config.json"]), values["config"])
+
+    def test_helm_template_without_cache_size_keeps_the_emptydir(self):
+        _, _, values = self.mixer_values("studio-a")
+        docs = [d for d in yaml.safe_load_all(self.helm("switchframe", values)) if d]
+        dep = next(d for d in docs if d["kind"] == "Deployment")
+        cache = next(v for v in dep["spec"]["template"]["spec"]["volumes"] if v["name"] == "cache")
+        self.assertEqual(cache, {"name": "cache", "emptyDir": {}})
+        self.assertEqual([d["metadata"]["name"] for d in docs if d["kind"] == "PersistentVolumeClaim"], ["t-state"])
 
     def test_helm_template_test_sources(self):
-        wl = yaml.safe_load((self.repo.path / "workloads" / "studio-a.yaml").read_text())
+        wl = yaml.safe_load((self.repo.gen / "studio-a.yaml").read_text())
         mx = wl["spec"]["mediaExchange"]
         for f in wl["spec"]["functions"]:
             if f["kind"] not in ("mxl-testsrc", "mxl-syncsrc"):

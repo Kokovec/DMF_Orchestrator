@@ -8,11 +8,23 @@
   gather_facts: false
   vars:
     kubectl: "kubectl --kubeconfig {{ dmf_kubeconfig }} -n wl-{{ workload }}"
-    archive: "{{ dmf_state_dir }}/archive/{{ workload }}-{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
   tasks:
+    # A fact, not a play var: a var is templated again at every use, so its timestamp moved on
+    # each second and later tasks wrote into directories that didn't exist (silently, since
+    # they ignore failures). That lost news-studio's state on 2026-11-07.
+    - name: Fix the archive directory for this run
+      ansible.builtin.set_fact:
+        archive: "{{ dmf_state_dir }}/archive/{{ workload }}-{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+
+    - name: Resolve the workload file (hand-written, else generated)
+      ansible.builtin.set_fact:
+        dmf_workload_file: "{{ lookup('ansible.builtin.pipe', dmf_repo_root ~ '/scripts/workload-file.sh ' ~ (workload | quote)) }}"
+
     - name: Read the workload design
       ansible.builtin.set_fact:
-        dmf_workload: "{{ lookup('ansible.builtin.file', dmf_repo_root ~ '/workloads/' ~ workload ~ '.yaml') | from_yaml }}"
+        dmf_workload: "{{ lookup('ansible.builtin.file', dmf_workload_file) | from_yaml }}"
+        # Compiled from published XML: workloads/generated/<id>.{yaml,config.json,source.xml}.
+        dmf_workload_generated: "{{ dmf_workload_file is search('/workloads/generated/') }}"
 
     # Archiving and teardown both need the running cluster. Stop here, before
     # creating an archive that would have nothing in it.
@@ -64,11 +76,57 @@
 
     - name: Archive the design and the Kubernetes resources as deployed
       ansible.builtin.shell: |
-        cp {{ dmf_repo_root }}/workloads/{{ workload }}.yaml {{ archive }}/design.yaml
+        cp {{ dmf_workload_file | quote }} {{ archive }}/design.yaml
         {{ kubectl }} get deploy,svc,ingress,networkpolicy,resourcequota,cm -o yaml > {{ archive }}/resources.yaml
         {{ kubectl }} get events --sort-by=.lastTimestamp > {{ archive }}/events.txt
       changed_when: true
       failed_when: false
+
+    # The published XML and the compiled config: what the toolkit asked for, beside what ran.
+    # Unlike the logs above, a missing file here stops the finalise before anything is destroyed.
+    - name: Archive the published source and compiled config
+      when: dmf_workload_generated | bool
+      ansible.builtin.copy:
+        src: "{{ dmf_workload_file | dirname }}/{{ item.from }}"
+        dest: "{{ archive }}/{{ item.to }}"
+        mode: "0600"
+      loop:
+        - {from: "{{ workload }}.source.xml", to: source.xml}
+        - {from: "{{ workload }}.config.json", to: config.json}
+
+    # The archive tasks above ignore failures so that one missing log doesn't block a teardown.
+    # These checks stop before anything is destroyed if the archive is missing what matters.
+    - name: Inspect the archive
+      ansible.builtin.stat:
+        path: "{{ archive }}/{{ item }}"
+      loop: [design.yaml, resources.yaml, switchframe-state.tgz]
+      register: archived
+
+    # A size check alone passes an archive cut off mid-stream, e.g. by a dropped exec.
+    - name: Read the SwitchFrame state archive back
+      ansible.builtin.command:
+        argv: [tar, -tzf, "{{ archive }}/switchframe-state.tgz"]
+      register: state_listing
+      changed_when: false
+      failed_when: false
+      when: archived.results[2].stat.exists
+
+    - name: Stop before teardown if the archive is incomplete
+      ansible.builtin.assert:
+        quiet: true
+        that:
+          - archived.results[0].stat.exists
+          - archived.results[1].stat.exists
+          # With pods running, SwitchFrame's state (presets, macros, operators) must be in it.
+          - >-
+            (pods.stdout | trim == '') or (archived.results[2].stat.exists and archived.results[2].stat.size > 0
+            and state_listing.rc == 0)
+        fail_msg: >-
+          The archive {{ archive }} is incomplete (design, resources or SwitchFrame state missing,
+          or the state archive doesn't read back: {{ state_listing.stderr | default('') | trim }}),
+          so nothing was destroyed. Fix the cause, or rerun with -e dmf_finalise_without_state=true
+          to tear down without SwitchFrame's state.
+      when: not (dmf_finalise_without_state | default(false) | bool)
 
     - name: Terraform destroy in workspace {{ workload }}
       community.general.terraform:
@@ -77,7 +135,7 @@
         state: absent
         force_init: true
         variables:
-          workload_file: "{{ dmf_repo_root }}/workloads/{{ workload }}.yaml"
+          workload_file: "{{ dmf_workload_file }}"
           kubeconfig: "{{ dmf_kubeconfig }}"
           charts_dir: "{{ dmf_repo_root }}/charts"
           image_tag: "{{ dmf_image_tag }}"
@@ -102,3 +160,24 @@
   roles:
     - role: mxl_domain
       dmf_mxl_state: absent
+
+# Only after the destroy and the Flow Domain deletion succeeded: the allocation and the
+# generated files describe a workload that may still be running until then.
+- name: Release the workload's allocation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Release uid and ports in .state/allocations.json
+      ansible.builtin.command:
+        argv: ["{{ dmf_repo_root }}/.tools/venv/bin/python", -m, tools.dmf_compile, release, "{{ workload }}"]
+        chdir: "{{ dmf_repo_root }}"
+      register: released
+      changed_when: released.stdout is search('^released')
+
+    - name: Remove the generated workload files (archived above)
+      when: dmf_workload_generated | bool
+      ansible.builtin.file:
+        path: "{{ dmf_workload_file | dirname }}/{{ workload }}.{{ item }}"
+        state: absent
+      loop: [yaml, config.json, source.xml]

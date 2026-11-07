@@ -9,7 +9,7 @@ metadata:
   libraryVersion: 4.0.2
 spec:
   resourceProfile: {cpu: '4', memory: 6Gi, gpu: 0}
-  mediaExchange: {domain: full-settings, uid: 20002, gid: 20002, sizeMiB: 2048}
+  mediaExchange: {domain: full-settings, uid: 20002, gid: 20002, sizeMiB: 657}
   access:
     hostname: full-settings.dmf.test
     quicPort: 8444
@@ -55,6 +55,6 @@ spec:
       programSource: mxl:817de3a0-f16a-5268-9d73-6b157c4b3611
       resources: {requests: {cpu: '2', memory: 4Gi}, limits: {cpu: '6', memory: 8Gi}}
       goMemLimit: 6GiB
-      volumes: {stateGi: 21, cacheGi: 52, recordingsGi: 100}
+      volumes: {stateGi: 21, cacheGi: 68, recordingsGi: 100}
       configFile: full-settings.config.json
       extraArgs: [--color-format=professional, --low-latency-sync, --frc-quality=blend, --srt-latency=200, --output-bitrate=8000000, --output-gop-secs=4, --output-preset=quality, --output-timecode, --replay-buffer-secs=120, --clip-storage-max=21474836480, --clip-ephemeral-ttl=48h, --captions, --scte35, --scte35-pid=500, --scte35-preroll=2000, --scte35-heartbeat=0, --scte35-verify=false, '--scte35-webhook=http://hooks.example/scte', --playout, --playout-cache-max=50, --playout-asrun-retention=7, --preview-proxy, --preview-resolution=720p, --preview-bitrate=1000000, --relay-resolution=480p, --relay-bitrate=1500000, --log-level, debug]

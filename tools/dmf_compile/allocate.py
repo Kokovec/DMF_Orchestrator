@@ -1,9 +1,9 @@
 """Per-workload UID/GID and ports, kept in .state/allocations.json.
 
 Re-importing keeps a workload's allocation; a new workload takes the lowest free values. Values in
-use are those of every other allocation and of every other workloads/*.yaml, hand-written or
-generated. Hand-written workloads count whether or not they are deployed: they can be deployed at
-any time, and the compiler can't see the cluster.
+use are those of every other allocation and of every other workload file, hand-written
+(workloads/*.yaml) or generated (workloads/generated/*.yaml). Hand-written workloads count whether
+or not they are deployed: they can be deployed at any time, and the compiler can't see the cluster.
 """
 import json
 from pathlib import Path
@@ -41,7 +41,8 @@ def in_use(repo, workload_id):
         if wid != workload_id:
             for f in FIELDS:
                 used[f][alloc[f]] = f"allocation of {wid}"
-    for path in sorted((Path(repo) / "workloads").glob("*.yaml")):
+    base = Path(repo) / "workloads"
+    for path in sorted(base.glob("*.yaml")) + sorted((base / "generated").glob("*.yaml")):
         try:
             doc = yaml.safe_load(path.read_text()) or {}
             name = doc["metadata"]["name"]
@@ -54,7 +55,7 @@ def in_use(repo, workload_id):
             continue
         for f, v in values.items():
             if v:
-                used[f].setdefault(int(v), f"workloads/{path.name}")
+                used[f].setdefault(int(v), str(path.relative_to(repo)))
     return used
 
 

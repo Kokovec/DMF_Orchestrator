@@ -14,15 +14,29 @@ class Sizing(unittest.TestCase):
         self.assertEqual(sizing.v210_frame_bytes(1280, 720), 2_465_280)    # ceil(1280/6) = 214 groups
         self.assertEqual(sizing.v210_frame_bytes(3840, 2160), 22_118_400)
 
+    def test_video_grains(self):
+        self.assertEqual(sizing.video_grains(NTSC, 500), 15)          # ceil(14.985)
+        self.assertEqual(sizing.video_grains(NTSC, 100), 5)           # never under what the writers keep
+        self.assertEqual(sizing.video_grains(Fraction(60000, 1001), 500), 30)
+
     def test_domain_studio_a(self):
-        # 4 x 1080p29.97 = 632 MiB/s; x1.25 + 256 = 1047, under the 2048 floor.
-        self.assertEqual(sizing.domain_size_mib([(1920, 1080, NTSC)] * 4), 2048)
+        # 4 video flows x 15 grains x 5,529,600 B + 4 x 1 MiB = 320.4 MiB; ceil(x1.25) = 401; + 256.
+        self.assertEqual(sizing.domain_size_mib([(1920, 1080, NTSC, 500)] * 4, 4), 657)
+
+    def test_domain_studio_a_covers_the_measured_use(self):
+        # Measured on studio-a: 111,399,034 B in the domain (5 grains per video flow).
+        self.assertGreater(sizing.domain_size_mib([(1920, 1080, NTSC, 500)] * 4, 4) * 2**20, 4 * 111_399_034)
 
     def test_domain_2160p(self):
-        # 4 x 22,118,400 B x 29.97 = 2528.7 MiB/s; ceil(x1.25) = 3161; + 256.
-        self.assertEqual(sizing.domain_size_mib([(3840, 2160, NTSC)] * 4), 3417)
-        self.assertEqual(sizing.domain_size_mib([(3840, 2160, Fraction(60000, 1001))] * 4), 6578)
-        self.assertEqual(sizing.domain_size_mib([(3840, 2160, Fraction(25))] * 2), 2048)
+        # 4 x 30 grains x 22,118,400 B + 4 MiB = 2535 MiB; ceil(x1.25) = 3170; + 256.
+        self.assertEqual(sizing.domain_size_mib([(3840, 2160, Fraction(60000, 1001), 500)] * 4, 4), 3426)
+        # 3 x 15 x 22,118,400 B + 3 MiB = 952.2 MiB; ceil(x1.25) = 1191; + 256.
+        self.assertEqual(sizing.domain_size_mib([(3840, 2160, NTSC, 500)] * 3, 3), 1447)
+        self.assertEqual(sizing.domain_size_mib([(1280, 720, Fraction(25), 1)] * 2, 2), 512)
+
+    def test_stmap_cache_matches_the_measurement(self):
+        # du on /cache/stmap at 1080p: 5 effects of 3,359,232,000 B.
+        self.assertEqual(sizing.stmap_cache_bytes(1920, 1080), 5 * 3_359_232_000)
 
     def test_switchframe_resources(self):
         self.assertEqual(sizing.switchframe_resources(2, 4096), (
@@ -43,18 +57,21 @@ class Sizing(unittest.TestCase):
         self.assertEqual(sizing.quota(pods), {"cpu": "4", "memory": "6Gi", "gpu": 0})
 
     def test_volumes(self):
-        self.assertEqual(sizing.volumes(10), {"stateGi": 11, "cacheGi": 5})
-        self.assertEqual(sizing.volumes(2), {"stateGi": 5, "cacheGi": 5})
-        self.assertEqual(sizing.volumes(None), {"stateGi": 11, "cacheGi": 5})
-        self.assertEqual(sizing.volumes(10, True, 50, 100), {"stateGi": 11, "cacheGi": 52, "recordingsGi": 100})
-        self.assertEqual(sizing.volumes(10, True), {"stateGi": 11, "cacheGi": 202})
+        # /cache: ST map prewarm (15.64 GiB at 1080p -> 16) + 2, plus the playout cache when on.
+        self.assertEqual(sizing.volumes(1920, 1080, 10), {"stateGi": 11, "cacheGi": 18})
+        self.assertEqual(sizing.volumes(1920, 1080, 2), {"stateGi": 5, "cacheGi": 18})
+        self.assertEqual(sizing.volumes(1920, 1080, None), {"stateGi": 11, "cacheGi": 18})
+        self.assertEqual(sizing.volumes(1920, 1080, 10, True, 50, 100), {"stateGi": 11, "cacheGi": 68, "recordingsGi": 100})
+        self.assertEqual(sizing.volumes(1920, 1080, 10, True), {"stateGi": 11, "cacheGi": 218})
+        self.assertEqual(sizing.volumes(1280, 720)["cacheGi"], 9)       # 6.95 GiB
+        self.assertEqual(sizing.volumes(3840, 2160)["cacheGi"], 65)     # 62.6 GiB
 
 
 class CompiledSizes(RepoTest):
     def test_studio_a(self):
         r = self.repo.compile(Doc().bytes())
         self.assertEqual(r.doc["spec"]["resourceProfile"], {"cpu": "4", "memory": "6Gi", "gpu": 0})
-        self.assertEqual(r.doc["spec"]["mediaExchange"]["sizeMiB"], 2048)
+        self.assertEqual(r.doc["spec"]["mediaExchange"]["sizeMiB"], 657)
 
     def test_2160p_workload(self):
         d = Doc().remove_function("sync").use("vision-mixer", "inputs", "mxl-src", 2)
@@ -68,8 +85,8 @@ class CompiledSizes(RepoTest):
         r = self.repo.compile(d.bytes())
         mixer = r.doc["spec"]["functions"][-1]
         self.assertEqual(mixer["format"], "2160p29.97")
-        # 3 x 22,118,400 B x 29.97 = 1896.5 MiB/s; ceil(x1.25) = 2371; + 256.
-        self.assertEqual(r.doc["spec"]["mediaExchange"]["sizeMiB"], 2627)
+        self.assertEqual(r.doc["spec"]["mediaExchange"]["sizeMiB"], 1447)
+        self.assertEqual(mixer["volumes"]["cacheGi"], 65)
 
 
 if __name__ == "__main__":

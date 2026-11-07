@@ -1,4 +1,7 @@
-"""workloads/<id>.yaml, <id>.config.json and <id>.source.xml, written atomically.
+"""workloads/generated/<id>.yaml, <id>.config.json and <id>.source.xml, written atomically.
+
+workloads/generated/ is git-ignored build output; hand-written workloads stay in workloads/<id>.yaml.
+scripts/workload-file.sh resolves an id to one or the other.
 
 Literal formats other scripts rely on (04-orchestrator-spec.md):
 - scripts/windows-browser.sh takes the first line matching `^ *hostname:`;
@@ -52,7 +55,7 @@ def render_yaml(doc, head):
 
 # The awk programs in scripts/windows-browser.sh and scripts/facility.sh, as regular expressions.
 _HOSTNAME_LINE = re.compile(r"^ *hostname:")
-_KIND_SWITCHFRAME = re.compile(r"kind: *switchframe")
+_KIND_SWITCHFRAME = re.compile(r"^ *kind: *switchframe *$")
 
 
 def literal_format_problems(text, doc):
@@ -71,8 +74,7 @@ def literal_format_problems(text, doc):
             prev = f[2]
     want = [f["name"] for f in doc["spec"]["functions"] if f.get("kind") == "switchframe"]
     if mixers != want:
-        problems.append(f"scripts/facility.sh would read the mixer as {mixers!r}: a name, label or description "
-                        "containing 'kind: switchframe' can't be used")
+        problems.append(f"scripts/facility.sh would read the mixer as {mixers!r}")
     return problems
 
 
@@ -80,16 +82,15 @@ def render_json(config):
     return json.dumps(config, indent=2, ensure_ascii=False) + "\n"
 
 
-def is_generated(path):
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return fh.readline().startswith(HEADER_PREFIX)
-    except FileNotFoundError:
-        return None
+GENERATED_DIR = Path("workloads") / "generated"
+
+
+def hand_written(repo, workload_id):
+    return Path(repo) / "workloads" / f"{workload_id}.yaml"
 
 
 def paths(repo, workload_id):
-    base = Path(repo) / "workloads"
+    base = Path(repo) / GENERATED_DIR
     return {"yaml": base / f"{workload_id}.yaml", "config": base / f"{workload_id}.config.json",
             "source": base / f"{workload_id}.source.xml"}
 

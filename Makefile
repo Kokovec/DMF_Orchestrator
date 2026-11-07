@@ -29,7 +29,7 @@ BECOME       ?= --ask-become-pass
 SKIP_PREFLIGHT ?=
 PREFLIGHT    := $(if $(SKIP_PREFLIGHT),true,scripts/preflight.sh)
 
-.PHONY: help prereqs infra hosts images platform import facility-export plan provision status start stop finalise up \
+.PHONY: help prereqs infra hosts images platform import deploy facility-export plan provision status start stop finalise up \
         destroy windows-browser trust-ca secrets nmos-query lint validate clean
 
 help:
@@ -56,6 +56,14 @@ platform: ## Shared services: PKI, monitoring, Keycloak, NMOS registry, guardrai
 import: ## DESIGN: compile a published workload (XML=<file|http://localhost url> [FACILITY=local] [ALLOW_REMOTE=1])
 	@test -n "$(XML)" || { echo "usage: make import XML=<file or http://localhost/... url> [FACILITY=local]"; exit 2; }
 	@$(PYTHON) -m tools.dmf_compile compile "$(XML)" --facility "$(FACILITY)" $(if $(ALLOW_REMOTE),--allow-remote)
+
+deploy: ## DESIGN to PROVISION: import XML, then plan and provision the workload it defines (needs sudo)
+	@test -n "$(XML)" || { echo "usage: make deploy XML=<file or http://localhost/... url> [FACILITY=local]"; exit 2; }
+	@mkdir -p .state
+	@$(PYTHON) -m tools.dmf_compile compile "$(XML)" --facility "$(FACILITY)" $(if $(ALLOW_REMOTE),--allow-remote) \
+	  --id-file .state/last-import-id
+	@id=$$(cat .state/last-import-id) && \
+	  $(MAKE) --no-print-directory plan WORKLOAD=$$id && $(MAKE) --no-print-directory provision WORKLOAD=$$id
 
 facility-export: ## Write .state/facility-<FACILITY>.json for DMF Toolkit (DMF_FACILITY)
 	@$(PYTHON) -m tools.dmf_compile facility-export --facility "$(FACILITY)"
