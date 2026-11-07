@@ -32,7 +32,7 @@ Read first: `docs/orchestration/README.md` ("Done means"), `README.md`, `docs/dm
 
 The toolkit API runs in distro `Ubuntu`, with `npm run server` on port 3001. Ask me to start it if you can't reach `http://localhost:3001/api/library`.
 
-Before changing anything live, check what's running. Don't finalise, destroy, or restart a workload you didn't start in this session without asking me.
+Before changing anything live, check what's running. Don't finalise, destroy, or restart a workload you didn't start in this session without asking me. Before asking me to run `make provision`, run `make plan` for every workload your change affects, generated ones included, and fix what fails. Give any `ANSIBLE_LOG_PATH` as an absolute path: Ansible runs from `ansible/`.
 
 Live test, using only the toolkit's API to create the workload, since this is an automated stand-in for the UI:
 1. Create a workload with a test source, an SRT listener source, SRT and RTMP outputs, recording, and non-default engine and audio settings. Publish it.

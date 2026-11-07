@@ -74,7 +74,7 @@ Refuse with a message naming function and parameter. Report all problems, not ju
 4. `resolution` + `rate` is a real SwitchFrame format.
 5. Every MXL source flow matches the engine: frame size, rate, `video/v210`, progressive, BT709, and `transfer` absent or SDR; audio 48 kHz float32. `dmf-mxl.2` requires 1080p29.97. Name the source, its value and the engine's value: the toolkit doesn't compare a source's format with the engine, so this is where a mismatch is caught. No wire reads `mxl-out.anc`: the toolkit can't produce one, so this only catches hand-edited XML.
 6. Every required secret exists in `.state/secrets/<id>.yaml`. Stage 5 onward.
-7. `id` is free or owned by this file: an existing `workloads/<id>.yaml` without the generated header is refused. It's never overwritten.
+7. No hand-written `workloads/<id>.yaml` exists for this id. The generated header is information only.
 8. Other things the generated YAML must satisfy: everything `workload-plan.yml` asserts.
 
 Warn, and continue: `freerun` with MXL sources, `settings.extraArgs` in use, SCTE-104 on with no `mxl-src` `anc` port wired (the product only reads when a data flow exists), and the "Ignored for now" options.
@@ -91,10 +91,11 @@ allocation; new workloads take the lowest free values. `finalise` releases them.
 
 ## Sizing (`sizing.py`)
 
-- **MXL domain:** `sizeMiB = max(2048, ceil(1.25 × Σ video flow bytes/s × 1 s / 2²⁰) + 256)`. V210 frame bytes = `ceil(width / 6) × 16 × height`. Verify on the running system in stage 4 by comparing with `df` on the domain, and correct the formula if it's wrong.
+- **MXL domain** (measured in stage 4: 106 MiB used by `studio-a`): `sizeMiB = max(512, ceil(1.25 × (Σ video flows grains × V210 frame bytes + 1 MiB per audio flow) / 2²⁰) + 256)`, with `grains = max(5, ceil(historyMs × rate / 1000))`. V210 frame bytes = `ceil(width / 6) × 16 × height`. `studio-a`: 657 MiB; 2160p59.94 with 4 flows: 3426 MiB.
 - **Pods:** `switchframe` from `resources` (see options doc); test sources 250m/256Mi requests, 1/1Gi limits; flow agent 50m/64Mi; gateway 30m/56Mi; reconciler 20m/32Mi.
+- **Capacity check:** `capacity.py` counts every workload's Flow Domain (tmpfs is RAM) as reserved, not only this one's.
 - **Quota:** `requests.cpu` and `requests.memory` = sum of pod requests + 20%, rounded up. Compare `news-studio`'s hand-set 7 CPU and 10 GiB when reviewing: the new value will be lower, and that is correct as long as pods schedule.
-- **Volumes:** state PVC = `clips.storageMaxGB + 1` GiB, floor 5. Recordings PVC = `recording.storageGiB`. `/cache` emptyDir `sizeLimit` = `playout.cacheMaxGB + 2` GiB when on, otherwise 5 GiB.
+- **Volumes:** state PVC = `clips.storageMaxGB + 1` GiB, floor 5. Recordings PVC = `recording.storageGiB`. `/cache` is a PVC, not an emptyDir, sized ST-map prewarm + 2 GiB, plus `playout.cacheMaxGB` when playout is on. SwitchFrame prewarms the ST-map tables on every start into `--cache-dir` and skips tables already there (`stmap.DirComplete`), so a PVC generates them once per workload. An emptyDir regenerates about 16 GiB, 3 minutes of CPU, at each restart; at 5 GiB it caused evictions every 20–90 s in stage 4. Prewarm = 5 effects × 90 frames × 18 bytes per pixel: 9 GiB at 720p, 18 at 1080p, 65 at 2160p. Finalise doesn't archive it: it's regenerable.
 - **Replay tmpfs:** the chart's 1 GiB stays for stage 4. Stage 6 measures use at 300 s for 3 sources, then sets a formula. It counts against pod memory.
 
 ## Where generated files go
@@ -155,6 +156,8 @@ because today a function named `switchframe` also matches.
 Write both files atomically. Also copy the source to `workloads/<id>.source.xml`. Add `workloads/*.config.json` and `*.source.xml` to what `finalise` archives.
 
 ## Terraform and chart changes
+
+Terraform finds `<id>.config.json` beside the workload file. The generated YAML's `programSource` field is what Terraform and the provision playbook read for the on-air source.
 
 `terraform/stacks/workload/main.tf`:
 - `flow_id` uses `try(f.flows.video, <current uuidv5>)`, and likewise for audio.
@@ -231,6 +234,9 @@ the intent of each part; where it differs, the golden file wins.
 Field names come from the API docs at the pinned commit. If a request body differs, follow the source and correct this example.
 
 ## Finalise
+
+The archive path is fixed once per run. Before any teardown, finalise checks that the archive has the design, the resources and, with pods running, a SwitchFrame state archive that passes `tar -tzf`. Only after a successful destroy and domain removal does it release the allocation and delete the generated files.
+
 
 `workload-finalise.yml`:
 - Before any teardown, copy `/recordings` to `.state/archive/<run>/recordings`. If the copy fails, stop before `terraform destroy` and say so. `DISCARD_RECORDINGS=1` is the deliberate override.

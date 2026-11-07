@@ -15,7 +15,7 @@ Check units in particular: bytes versus MB or GB, bit/s versus kbit/s, and any f
 
 Measure, then set: replay tmpfs. Run with 300 s and 3 sources and record the tmpfs used. Set the sizing formula from that, with its evidence in a comment. Replay tmpfs counts against pod memory, so include it in the memory calculation.
 
-Before changing anything live, check what's running. Don't finalise, destroy, or restart a workload you didn't start in this session without asking me.
+Before changing anything live, check what's running. Don't finalise, destroy, or restart a workload you didn't start in this session without asking me. Before asking me to run `make provision`, run `make plan` for every workload your change affects, generated ones included, and fix what fails. Give any `ANSIBLE_LOG_PATH` as an absolute path: Ansible runs from `ansible/`.
 
 Live test. Write `examples/full-settings.workload.xml`, giving every in-scope option a non-default value. Then:
 1. Read each value back through the API or the running args. Output a table: option, value set, value read, match. Every in-scope row of the options doc appears. An option with no way to read it back is marked as such, with what you checked instead, such as a request log.

@@ -23,7 +23,7 @@ Verify before relying on these:
 - Whether label and position persist for a listener source across a restart, per the docs.
 - Whether a destination's `passphrase` appears in any API response or log. If it does, keep it out of everything this repo logs and archives, and report it.
 
-Before changing anything live, check what's running. Don't finalise, destroy, or restart a workload you didn't start in this session without asking me. Rebuilding images takes a long time, so run it in the background. If provisioning needs sudo you can't get, give me the exact command.
+Before changing anything live, check what's running. Don't finalise, destroy, or restart a workload you didn't start in this session without asking me. Before asking me to run `make provision`, run `make plan` for every workload your change affects, generated ones included, and fix what fails. Give any `ANSIBLE_LOG_PATH` as an absolute path: Ansible runs from `ansible/`. Rebuilding images takes a long time, so run it in the background. If provisioning needs sudo you can't get, give me the exact command.
 
 Live test. Run test streams with `ffmpeg` inside a temporary container, not on the host. Write a workload XML under `examples/` covering these:
 1. SRT listener: push an MPEG-TS with stream ID `venue1`. The source appears as `srt:venue1`, and its label and on-air selection get applied after it connects, not before. Start the workload with no encoder running first.
@@ -34,7 +34,7 @@ Live test. Run test streams with `ffmpeg` inside a temporary container, not on t
 6. Recording: files appear and rotate. Delete the pod: recording resumes. `make finalise` copies them to the archive.
 7. Operator change: change a label through the API, and confirm the reconciler doesn't overwrite it on later loops.
 8. Metrics: `dmf_reconcile_pending` reaches 0, and Prometheus scrapes it.
-9. Regression: `studio-a` and `news-studio` still work. Stage 4's restart test still passes.
+9. Regression: `studio-a` and `news-studio` still work. Stage 4's restart test still passes. The facility can't hold `news-studio` (12 GiB) beside another workload, so check capacity first and ask me before finalising anything to make room.
 
 `make validate` passes. Don't commit. Report failures with their output.
 
