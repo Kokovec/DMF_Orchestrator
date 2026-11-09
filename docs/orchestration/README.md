@@ -42,7 +42,7 @@ GET /api/workloads/:id/published.xml ──►   4. write workloads/<id>.yaml + 
 | D5 | A reconciler sidecar replaces the chart's `postStart` hook | SwitchFrame doesn't persist destinations or recording, and an SRT listener source has no API object until its encoder connects, so a one-shot hook can't apply its settings |
 | D6 | The facility profile decides what can run. The compiler always enforces it; the toolkit uses an exported copy to grey out options | The configurator doesn't make infrastructure decisions (toolkit R1.2), but users shouldn't design what can't deploy |
 | D7 | The toolkit owns flow IDs | Toolkit contract already says so; Terraform falls back to its own only for hand-written workloads |
-| D8 | Secrets are references; values live in `.state/secrets/<id>.yaml` (mode 600, git-ignored) | Small and local. Replaceable by a real secret store later |
+| D8 | Secrets are references; values live in `.state/secrets/<id>.yaml` (mode 600, git-ignored), and reach Terraform's plan and state files, which are kept private too | Small and local. Replaceable by a real secret store later |
 | D9 | `finalise` copies recordings to the archive before it destroys anything | The local-path volume is deleted with the workload, so without this recordings are lost for good |
 
 ## Environment facts

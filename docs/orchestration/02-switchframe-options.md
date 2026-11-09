@@ -75,8 +75,8 @@ An SRT listener source has no API object until its encoder connects. The reconci
 | `srt-out.srt.passphrase` | Secret, in `passphrase`. `GET /api/output/destinations` returns it, so nothing this repo logs or archives may contain that response unredacted | 5 |
 | `srt-out`, mode = listener | **G `srt-listener-out`**: the chart opens no output ports | Not built |
 | `rtmp-out.rtmp.url` | Destination type `rtmp`, `url` | 5 |
-| `rtmp-out.rtmp.streamKey` | Secret, appended to `url`: the product ignores `streamID` for RTMP. The product masks the URL in its own logs, but `GET /api/output/destinations` returns it in full; same redaction rule as the passphrase | 5 |
-| `recording` on/off; `recording.recording.*` | `POST /api/recording/start` `{outputDir: "/recordings", rotateAfterMins, maxFileSizeMB, filenamePrefix}`. `rotateAfterMins: 0` means 60 in the product, so the minimum is 1; restarted by the reconciler when stopped unexpectedly | 5 |
+| `rtmp-out.rtmp.streamKey` | Secret, appended to `url`: the product ignores `streamID` for RTMP. The product masks the URL in its own logs, but `GET /api/output/destinations` returns it in full, and `GET /api/switch/state` carries it to every operator including viewers. A build patch masks the state field (stage 6); same redaction rule as the passphrase | 5 |
+| `recording` on/off; `recording.recording.*` | `POST /api/recording/start` `{outputDir: "/recordings", rotateAfterMins, maxFileSizeMB, filenamePrefix}`. `rotateAfterMins: 0` means 60 in the product, so the minimum is 1; started once per SwitchFrame run, and restarted only if it failed: an operator's clean stop stands. Writes an empty file until a source is on air | 5 |
 | `recording.recording.storageGiB` (new, required when on) | Size of a new recordings PVC | 5 |
 
 ### Other features

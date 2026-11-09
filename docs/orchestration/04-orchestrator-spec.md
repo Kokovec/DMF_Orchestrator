@@ -77,6 +77,8 @@ Refuse with a message naming function and parameter. Report all problems, not ju
 7. No hand-written `workloads/<id>.yaml` exists for this id. The generated header is information only.
 8. Other things the generated YAML must satisfy: everything `workload-plan.yml` asserts.
 
+Refuse a `streamId` used by more than one SRT input of a function: listeners and callers share keys.
+
 Warn, and continue: `freerun` with MXL sources, `settings.extraArgs` in use, SCTE-104 on with no `mxl-src` `anc` port wired (the product only reads when a data flow exists), and the "Ignored for now" options.
 Refuse `--demo` in any args.
 
@@ -150,14 +152,14 @@ spec:
 **Keep these literal formats:** `scripts/windows-browser.sh` and `scripts/facility.sh` parse this
 file with `awk`. The workload's `hostname:` must be the first line matching `^ *hostname:`, and each
 function must have `- name:` on the line immediately before `kind:`. The compiler checks its own
-output the way both lines read it. Stage 4 anchors `facility.sh`'s match to `^ *kind: *switchframe *$`,
+output the way both lines read it. Stage 4 anchors `facility.sh`'s match to `^ *kind: *switchframe *(#.*)?$`, allowing a trailing comment as `news-studio.yaml` has,
 because today a function named `switchframe` also matches.
 
 Write both files atomically. Also copy the source to `workloads/<id>.source.xml`. Add `workloads/*.config.json` and `*.source.xml` to what `finalise` archives.
 
 ## Terraform and chart changes
 
-Terraform finds `<id>.config.json` beside the workload file. The generated YAML's `programSource` field is what Terraform and the provision playbook read for the on-air source.
+Terraform plan and state files hold secret values, so they stay private (600, 700). Hand-written workloads get a generated config that reproduces the old hook. Terraform finds `<id>.config.json` beside the workload file. The generated YAML's `programSource` field is what Terraform and the provision playbook read for the on-air source.
 
 `terraform/stacks/workload/main.tf`:
 - `flow_id` uses `try(f.flows.video, <current uuidv5>)`, and likewise for audio.
@@ -188,16 +190,16 @@ Auth: register a short-lived named `dmf-automation-<epoch>` director operator, a
 Loop: every 5 s for the first 2 minutes after start, then every 30 s:
 
 1. Wait for `GET /api/switch/state`.
-2. For each desired source: resolve its key (see [01-contract.md](01-contract.md)). Skip it if not present yet. Apply settings once per source appearance, and again if it disappears and returns.
-3. Remove SRT caller pulls no longer desired: the product persists them across restarts in `srt_sources.json`.
-4. Create and start destinations missing by `name`. Recreate only if the desired config changed.
-5. If `recording` is desired and not running, start it.
+2. For each desired source: resolve its key (see [01-contract.md](01-contract.md)). Skip it if not present yet. Apply settings once per appearance, and again if it disappears and returns. For SRT sources an appearance is a connection: wait for `srt.connected` and reapply on each one, because SwitchFrame resets label and position every time and API-set values never reach its store.
+3. Remove SRT caller pulls that the design used to have and no longer does: the product persists them across restarts in `srt_sources.json`. The reconciler records the stream IDs it manages in a file on the state volume and only ever removes those. A pull an operator added in the UI is never touched.
+4. Once per SwitchFrame run, create and start destinations missing by `name`, so an operator's deletion stands until the next restart. Recreate only if the desired config changed.
+5. Once per SwitchFrame run, start `recording` if desired. Restart it only if it failed, not after an operator's clean stop.
 6. If nothing is on air and `program` is present, cut to it.
 
 Requirements:
 - Never fails the pod and never exits on API errors. Logs as JSON. Doesn't overwrite operator changes: a setting is applied once per appearance, not every loop.
 - Redacts passphrases and RTMP URLs from anything it logs, including API responses.
-- Exposes `dmf_reconcile_pending` and `dmf_reconcile_errors_total` at `:9103/metrics`, added to the ServiceMonitor.
+- Exposes `dmf_reconcile_pending`, `dmf_reconcile_failed`, `dmf_reconcile_api_up` and `dmf_reconcile_errors_total` at `:9103/metrics`, added to the ServiceMonitor.
 - Uses the current hook's auth and retry logic as its starting point.
 
 `config.json`: explicit calls with `{key}` placeholders the reconciler resolves at runtime,
@@ -239,7 +241,7 @@ The archive path is fixed once per run. Before any teardown, finalise checks tha
 
 
 `workload-finalise.yml`:
-- Before any teardown, copy `/recordings` to `.state/archive/<run>/recordings`. If the copy fails, stop before `terraform destroy` and say so. `DISCARD_RECORDINGS=1` is the deliberate override.
+- Before any teardown, stop the recording, then copy `/recordings` to `.state/archive/<run>/recordings`. If the copy fails, stop before `terraform destroy` and say so. `DISCARD_RECORDINGS=1` is the deliberate override.
 - Archive `workloads/<id>.source.xml` and `<id>.config.json`.
 - Release the allocation. Remove generated workload files only after a successful destroy.
 

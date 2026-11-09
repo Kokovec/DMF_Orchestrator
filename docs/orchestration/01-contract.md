@@ -101,4 +101,4 @@ SwitchFrame's API addresses sources by key. Agents must not assume more than thi
 |---|---|
 | MXL | `mxl:<video flow id>` (as the current chart uses it) |
 | SRT listener | `srt:<streamId>`. The product strips `/` and `live/` and sanitises, so the toolkit and compiler require `^[A-Za-z0-9_-]{1,64}$` |
-| SRT caller | **Runtime only.** `POST /api/sources` returns it and its API doc shows `srt-cam1-ab12cd34`. Find it by matching `streamID` in state; never derive it |
+| SRT caller | `srt:<streamID>`, confirmed in the source and live; the API doc's `srt-cam1-ab12cd34` is wrong. Same namespace as listener keys, so a `streamId` must be unique across all SRT inputs of a function. The reconciler still matches by `streamID` |

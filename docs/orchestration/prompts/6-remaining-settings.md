@@ -13,6 +13,8 @@ Read first:
 
 Check units in particular: bytes versus MB or GB, bit/s versus kbit/s, and any field whose zero value means "off" or "default". For each row, a test asserts the exact flag or request body.
 
+Also build one patch first. At the pinned commit, `server/cmd/switchframe/app_state.go` copies each destination's full `URL` into `ControlRoomState`, which is broadcast to every operator including viewers, and our RTMP stream key is in that URL. Add a patch under `images/media-functions/patches/`, following the existing ones and wired into the Dockerfile, that keeps only scheme and host in that field, e.g. `rtmp://host/****`. Don't reuse `rtmpMaskURL`: it only masks after a fourth slash, so `rtmp://host/key` would leak. The real URL must still be used to send. Then run `make images` in the background: it also rebuilds `mxl-tools`, because stage 5's final reconciler and flow agent fixes aren't in any image yet. Load them as stage 5 did, and redeploy whatever you test so it runs the new images.
+
 Measure, then set: replay tmpfs. Run with 300 s and 3 sources and record the tmpfs used. Set the sizing formula from that, with its evidence in a comment. Replay tmpfs counts against pod memory, so include it in the memory calculation.
 
 Before changing anything live, check what's running. Don't finalise, destroy, or restart a workload you didn't start in this session without asking me. Before asking me to run `make provision`, run `make plan` for every workload your change affects, generated ones included, and fix what fails. Give any `ANSIBLE_LOG_PATH` as an absolute path: Ansible runs from `ansible/`.
@@ -24,6 +26,8 @@ Live test. Write `examples/full-settings.workload.xml`, giving every in-scope op
 4. Confirm a chroma key and a luma key apply to a source. `off` removes it.
 5. Confirm 10 GB of clip storage is honoured by a correctly sized state PVC, and that playout's cache has a sized volume.
 6. Regression: stages 4 and 5 live tests for `studio-a` and SRT input.
+7. RTMP key: with an RTMP output running, `GET /api/switch/state` shows no key, and the receiver still gets the stream.
+8. An SRT caller added through the API, not in the design, survives 70 s of reconciler loops and a pod delete. A caller removed from the design is still removed.
 
 Report any setting that the API accepts but has no observable effect. Don't count it as passing.
 
