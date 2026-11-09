@@ -1,5 +1,6 @@
 {{- $fullname := include "switchframe.fullname" . -}}
-# Control plane: HTTP API + embedded UI (only the SSO gateway may call it) and admin/metrics.
+# Control plane: HTTP API + embedded UI (only the SSO gateway may call it), admin/metrics and
+# the reconciler's metrics.
 apiVersion: v1
 kind: Service
 metadata:
@@ -14,6 +15,7 @@ spec:
   ports:
     - {name: http, port: {{ .Values.switchframe.httpPort }}, targetPort: http, protocol: TCP}
     - {name: admin, port: {{ .Values.switchframe.adminPort }}, targetPort: admin, protocol: TCP}
+    - {name: reconciler, port: {{ .Values.reconciler.metricsPort }}, targetPort: reconciler, protocol: TCP}
 ---
 # Media plane: WebTransport (QUIC) to browsers and SRT contribution input.
 apiVersion: v1

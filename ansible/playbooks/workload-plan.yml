@@ -70,6 +70,14 @@
         msg: "Not enough unreserved capacity for {{ workload }} (see verdict above)."
       when: capacity.rc != 0
 
+    # Terraform copies a workload's secret values (.state/secrets/<id>.yaml, mode 600) into its
+    # plan and state files, which it writes world-readable.
+    - name: Keep Terraform's state private
+      ansible.builtin.file:
+        path: "{{ dmf_terraform_dir }}/workload/terraform.tfstate.d"
+        state: directory
+        mode: "0700"
+
     - name: Terraform plan in workspace {{ workload }}
       community.general.terraform:
         project_path: "{{ dmf_terraform_dir }}/workload"
@@ -82,9 +90,15 @@
           kubeconfig: "{{ dmf_kubeconfig }}"
           charts_dir: "{{ dmf_repo_root }}/charts"
           image_tag: "{{ dmf_image_tag }}"
+          secrets_file: "{{ dmf_state_dir }}/secrets/{{ workload }}.yaml"
           image_ids_file: "{{ dmf_state_dir }}/image-ids.json"
       register: tfplan
       check_mode: false
+
+    - name: Keep the plan file private (it holds the workload's secret values)
+      ansible.builtin.file:
+        path: "{{ dmf_state_dir }}/{{ workload }}.tfplan"
+        mode: "0600"
 
     - name: Plan summary
       ansible.builtin.debug:

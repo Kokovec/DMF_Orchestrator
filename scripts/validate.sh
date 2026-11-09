@@ -10,8 +10,15 @@ step() { printf '\n== %s\n' "$*"; }
 run() { "$@" || { echo "FAILED: $*"; fail=1; }; }
 
 step "python"
-run python3 -m py_compile images/media-functions/mxl-flow-agent/agent.py images/sso-bridge/bridge.py ansible/scripts/capacity.py \
-  $(find tools/dmf_compile -name '*.py')
+run python3 -m py_compile images/media-functions/mxl-flow-agent/agent.py images/media-functions/sf-reconciler/reconciler.py \
+  images/sso-bridge/bridge.py ansible/scripts/capacity.py scripts/secret-set.py $(find tools/dmf_compile -name '*.py')
+
+step "flow agent tests (unreachable NMOS registry)"
+run env PYTHONDONTWRITEBYTECODE=1 python3 -I images/media-functions/mxl-flow-agent/test_agent.py
+
+step "reconciler tests (fake SwitchFrame API)"
+# python3 -I, as in the pod: the reconciler is standard library only.
+run env PYTHONDONTWRITEBYTECODE=1 python3 -I images/media-functions/sf-reconciler/test_reconciler.py
 
 step "workload compiler tests"
 # DMF_REQUIRE_TOOLS: tests that shell out to helm, yamllint, ansible-playbook or docker fail

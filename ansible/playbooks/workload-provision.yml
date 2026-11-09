@@ -35,7 +35,7 @@
     ns: "wl-{{ workload }}"
     kubectl: "kubectl --kubeconfig {{ dmf_kubeconfig }} -n wl-{{ workload }}"
     mixer: "{{ dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first }}"
-    # The source the pod puts on air, as Terraform chooses it: a generated workload names it
+    # The source the reconciler puts on air, as Terraform chooses it: a generated workload names it
     # (programSource, absent when its key is only known at runtime); a hand-written one uses its
     # first source.
     program_source: >-
@@ -68,6 +68,14 @@
       delay: 5
       until: keycloak_ready.status == 200
 
+    # Terraform copies a workload's secret values (.state/secrets/<id>.yaml, mode 600) into its
+    # plan and state files, which it writes world-readable.
+    - name: Keep Terraform's state private
+      ansible.builtin.file:
+        path: "{{ dmf_terraform_dir }}/workload/terraform.tfstate.d"
+        state: directory
+        mode: "0700"
+
     - name: Terraform apply in workspace {{ workload }}
       community.general.terraform:
         project_path: "{{ dmf_terraform_dir }}/workload"
@@ -79,6 +87,7 @@
           kubeconfig: "{{ dmf_kubeconfig }}"
           charts_dir: "{{ dmf_repo_root }}/charts"
           image_tag: "{{ dmf_image_tag }}"
+          secrets_file: "{{ dmf_state_dir }}/secrets/{{ workload }}.yaml"
           image_ids_file: "{{ dmf_state_dir }}/image-ids.json"
       register: applied
 
@@ -94,9 +103,10 @@
       ansible.builtin.command: "{{ kubectl }} rollout status deploy --timeout=600s"
       changed_when: false
 
-    # The mixer pod restores programme and source labels itself on every start
-    # (postStart in charts/switchframe), including restarts PROVISION never sees.
-    # SwitchFrame publishes programme flows only with a source on air.
+    # The mixer pod's reconciler (sf-reconciler in charts/switchframe) restores the programme,
+    # source settings, destinations and recording itself, on every start and as sources appear,
+    # including restarts PROVISION never sees. SwitchFrame publishes programme flows only with a
+    # source on air.
     - name: CONFIGURE check - programme on air (skipped)
       when: not (on_air_checkable | bool)
       ansible.builtin.debug:

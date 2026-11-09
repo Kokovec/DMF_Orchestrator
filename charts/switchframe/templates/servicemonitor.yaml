@@ -21,6 +21,10 @@ spec:
         credentials:
           name: {{ .Values.switchframe.existingSecret }}
           key: admin-token
+    # sf-reconciler: dmf_reconcile_pending, dmf_reconcile_errors_total (no secrets, no auth).
+    - port: reconciler
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
 {{- if .Values.sso.enabled }}
 ---
 apiVersion: monitoring.coreos.com/v1

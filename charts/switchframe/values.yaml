@@ -1,11 +1,6 @@
 # -- DMF Media Workload this Media Function belongs to (required).
 workload: ""
 
-# Restored by the pod on every start (see postStart in the deployment).
-configure:
-  programSource: ""       # source put on programme when nothing is on air
-  labels: []              # [{source: mxl:<video flow id>, label: Camera 1}]
-
 imageId: ""               # rolls the pod when a rebuilt image is loaded under the same tag
 
 image:
@@ -61,9 +56,26 @@ persistence:
 cache:
   size: ""                # e.g. 18Gi (tools/dmf_compile sizing)
 
-# Compiled SwitchFrame config (workloads/generated/<id>.config.json), rendered as the
-# <release>-config ConfigMap for the reconciler (stage 5). Empty for hand-written workloads.
+# SwitchFrame config for the reconciler, rendered as the <release>-config ConfigMap: the compiled
+# workloads/generated/<id>.config.json, or one Terraform writes for a hand-written workload
+# (programme source and labels). {} applies nothing.
 config: {}
+
+# sf-reconciler sidecar (images/media-functions/sf-reconciler), shipped in the mxl-tools image.
+reconciler:
+  image:
+    repository: dmf.local/mxl-tools
+    tag: ""               # defaults to .Chart.AppVersion
+  imageId: ""             # rolls the pod when a rebuilt mxl-tools image is loaded under the same tag
+  metricsPort: 9103
+  secretName: workload-refs
+  resources:
+    requests: {cpu: 20m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+
+# /recordings: a PVC when recording is designed in (recording.storageGiB); "" mounts nothing.
+recordings:
+  size: ""                # e.g. 20Gi
 
 replayTmpfsSize: 1Gi
 

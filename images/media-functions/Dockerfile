@@ -6,7 +6,8 @@
 #                          (the upstream Dockerfile has no MXL support).
 #   target "mxl-tools"   : MXL SDK tools (mxl-gst-testsrc, mxl-gst-looping-filesrc, mxl-info),
 #                          the mxl-syncgen A/V sync source,
-#                          plus the mxl-flow-agent (NMOS IS-04 registration and flow metrics).
+#                          plus the mxl-flow-agent (NMOS IS-04 registration and flow metrics)
+#                          and sf-reconciler (the SwitchFrame pod's configuration sidecar).
 #
 # Build (make images does this):
 #   docker build --target switchframe -t dmf.local/switchframe:<tag> images/media-functions
@@ -160,7 +161,7 @@ ENTRYPOINT ["/usr/local/bin/switchframe"]
 FROM ${BASE_IMAGE} AS mxl-tools
 ARG MXL_VERSION
 LABEL org.opencontainers.image.title="mxl-tools" \
-      org.opencontainers.image.description="MXL SDK tools and DMF flow agent (NMOS IS-04 registration, flow monitoring)" \
+      org.opencontainers.image.description="MXL SDK tools, DMF flow agent (NMOS IS-04 registration, flow monitoring) and SwitchFrame reconciler" \
       org.opencontainers.image.source="https://github.com/dmf-mxl/mxl" \
       org.opencontainers.image.version="${MXL_VERSION}" \
       org.opencontainers.image.licenses="Apache-2.0"
@@ -180,5 +181,6 @@ COPY --from=mxl-syncgen /out/mxl-syncgen /usr/local/bin/mxl-syncgen
 COPY --from=mxl-sdk /opt/mxl/lib/gstreamer-1.0/ /usr/local/lib/dmf/gstreamer-1.0/
 ENV GST_PLUGIN_PATH=/usr/local/lib/dmf/gstreamer-1.0
 COPY mxl-flow-agent/agent.py /usr/local/bin/mxl-flow-agent
+COPY sf-reconciler/reconciler.py /usr/local/bin/sf-reconciler
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/mxl-gst-testsrc"]

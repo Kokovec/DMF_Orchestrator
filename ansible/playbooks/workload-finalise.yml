@@ -94,6 +94,74 @@
         - {from: "{{ workload }}.source.xml", to: source.xml}
         - {from: "{{ workload }}.config.json", to: config.json}
 
+    # Recordings live on the workload's local-path volume, which terraform destroy deletes, so they
+    # are copied first and the copy is checked file by file (decision D9). A failed or incomplete
+    # copy stops the finalise; DISCARD_RECORDINGS=1 (dmf_discard_recordings) is the deliberate override.
+    - name: Recordings
+      when: mixer_fn.volumes.recordingsGi is defined
+      vars:
+        mixer_fn: "{{ dmf_workload.spec.functions | selectattr('kind', 'equalto', 'switchframe') | first }}"
+        exec: "{{ kubectl }} exec deploy/{{ mixer_fn.name }}"
+        discard: "{{ dmf_discard_recordings | default(false) | bool }}"
+      block:
+        - name: Stop the recording, so its last file is complete (the reconciler leaves a clean stop alone)
+          ansible.builtin.command: "{{ exec }} -c reconciler -- python3 -I /usr/local/bin/sf-reconciler stop-recording"
+          register: rec_stop
+          changed_when: rec_stop.rc == 0
+          failed_when: false
+
+        - name: Create the recordings archive directory
+          ansible.builtin.file:
+            path: "{{ archive }}/recordings"
+            state: directory
+            mode: "0700"
+
+        - name: Copy /recordings to the archive
+          ansible.builtin.shell: |
+            set -o pipefail
+            {{ exec }} -c switchframe -- tar -C /recordings -cf - . | tar -C {{ (archive ~ '/recordings') | quote }} -xf -
+          args:
+            executable: /bin/bash
+          register: rec_copy
+          changed_when: rec_copy.rc == 0
+          failed_when: false
+
+        # Name and size of every file, in the volume and in the archive: they must be the same.
+        - name: List the recordings in the volume
+          ansible.builtin.command: "{{ exec }} -c switchframe -- find /recordings -type f -printf '%P %s\\n'"
+          register: rec_source
+          changed_when: false
+          failed_when: false
+
+        - name: List the recordings in the archive
+          ansible.builtin.command:
+            argv: [find, "{{ archive }}/recordings", -type, f, -printf, "%P %s\\n"]
+          register: rec_archived
+          changed_when: false
+          failed_when: false
+
+        - name: Stop before teardown if the recordings weren't copied
+          ansible.builtin.assert:
+            quiet: true
+            that:
+              - rec_copy.rc == 0
+              - rec_source.rc == 0
+              - (rec_source.stdout_lines | sort) == (rec_archived.stdout_lines | sort)
+            fail_msg: >-
+              Copying the recordings to {{ archive }}/recordings failed, so nothing was destroyed
+              (copy rc {{ rec_copy.rc }}: {{ rec_copy.stderr | default('') | trim | truncate(300) }};
+              {{ rec_source.stdout_lines | length }} files in the volume, {{ rec_archived.stdout_lines | length }} archived).
+              Fix the cause and run make finalise again, or run it with DISCARD_RECORDINGS=1 to tear down
+              and lose the recordings.
+          when: not (discard | bool)
+
+        - name: Recordings discarded
+          ansible.builtin.debug:
+            msg: >-
+              WARNING: DISCARD_RECORDINGS is set: {{ rec_source.stdout_lines | length }} recordings
+              ({{ rec_archived.stdout_lines | length }} copied) are deleted with the workload.
+          when: discard | bool
+
     # The archive tasks above ignore failures so that one missing log doesn't block a teardown.
     # These checks stop before anything is destroyed if the archive is missing what matters.
     - name: Inspect the archive
@@ -139,6 +207,7 @@
           kubeconfig: "{{ dmf_kubeconfig }}"
           charts_dir: "{{ dmf_repo_root }}/charts"
           image_tag: "{{ dmf_image_tag }}"
+          secrets_file: "{{ dmf_state_dir }}/secrets/{{ workload }}.yaml"
 
     - name: Remove workload hostname from the control node
       ansible.builtin.include_role:

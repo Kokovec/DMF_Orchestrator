@@ -268,6 +268,10 @@ def ignored_for_now(doc, report):
                                        f"{why.get(kind, 'it changes nothing on this single-host facility')}")
 
 
+# A Kubernetes Secret key, which the reconciler reads as a file name (scripts/secret-set.py too).
+SECRET_NAME = re.compile(r"^[-._A-Za-z0-9]{1,253}$")
+
+
 def secrets_file(repo, workload_id):
     return Path(repo) / ".state" / "secrets" / f"{workload_id}.yaml"
 
@@ -291,8 +295,12 @@ def check_secrets(repo, workload_id, used, report):
             report.refuse(6, f"workload: {rel}", "must map secret names to values")
             values = {}
     for place, name, param in used:
+        if not SECRET_NAME.match(name) or name in (".", ".."):
+            report.refuse(6, place, f"secret name {name!r} must match {SECRET_NAME.pattern}: it becomes a key of the "
+                                    "workload-refs Secret")
+            continue
         if name not in values:
-            report.refuse(6, place, f"secret {name!r} is not in {rel}; add '{name}: <value>' to it, mode 600")
+            report.refuse(6, place, f"secret {name!r} is not in {rel}; run: make secret-set WORKLOAD={workload_id} NAME={name}")
             continue
         value = values[name]
         if not isinstance(value, str) or not value:

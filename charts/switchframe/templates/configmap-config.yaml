@@ -1,6 +1,6 @@
-{{- if .Values.config }}
-# The compiled config (tools/dmf_compile) for the reconciler. Not mounted by the SwitchFrame
-# container, so a change to it doesn't restart the mixer.
+# The compiled config (tools/dmf_compile; Terraform writes a minimal one for a hand-written
+# workload) for the reconciler. Not mounted by the SwitchFrame container, and not in a pod
+# annotation: the kubelet updates the file in place, so a change doesn't restart the mixer.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,4 +10,3 @@ metadata:
 data:
   config.json: |
     {{- toPrettyJson .Values.config | nindent 4 }}
-{{- end }}

@@ -133,6 +133,11 @@ class Rules(RepoTest):
         self.repo.secrets("full-settings", FULL_SETTINGS_SECRETS)
         self.assertRefused(d, 6, f"{VM}: rtmp-out.rtmp.streamKey", "must be a secret reference")
 
+    def test_rule6_secret_name_is_a_secret_key(self):
+        d = full_settings().set(VM, "rtmp-out.rtmp.streamKey", "yt key/1", "secret")
+        self.repo.secrets("full-settings", {**FULL_SETTINGS_SECRETS, "yt key/1": "abcd"})
+        self.assertRefused(d, 6, f"{VM}: rtmp-out.rtmp.streamKey", "secret name 'yt key/1' must match")
+
     def test_rule6_only_when_referenced(self):
         self.repo.compile(Doc().bytes())   # no secrets file, nothing referenced
 
@@ -178,6 +183,21 @@ class Rules(RepoTest):
         for where in ("mxl-src.source.label", "recording.recording.rotateAfterMinutes", "scte35.scte35.defaultRule",
                       "mxl-src.key.fillSource", "srt-src.srt.streamId", "srt-src.srt.address"):
             self.assertIn(f"{VM}: {where}", got, "\n".join(map(str, problems)))
+
+    def test_rule8_stream_id_is_unique_across_srt_inputs(self):
+        # Listeners and callers share srt:<streamID> keys, so a mixed pair collides too.
+        for modes in (("listener", "listener"), ("caller", "caller"), ("listener", "caller")):
+            with self.subTest(modes=modes):
+                d = Doc().use(VM, "inputs", "srt-src", 2)
+                for copy, mode in zip(("srt-src", "srt-src_2"), modes):
+                    d.set(VM, f"{copy}.srt.mode", mode).set(VM, f"{copy}.srt.streamId", "venue1")
+                    d.set(VM, f"{copy}.srt.address", "enc.example.net:9000")
+                self.assertRefused(d, 8, f"{VM}: srt-src_2.srt.streamId", "'venue1' is also used by srt-src")
+
+    def test_rule8_distinct_stream_ids_are_accepted(self):
+        d = Doc().use(VM, "inputs", "srt-src", 2)
+        d.set(VM, "srt-src.srt.streamId", "venue1").set(VM, "srt-src_2.srt.streamId", "venue2")
+        self.repo.compile(d.bytes())
 
     def test_rule8_mxl_input_without_wire(self):
         d = Doc().use(VM, "inputs", "mxl-src", 4)

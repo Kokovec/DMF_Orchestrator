@@ -22,6 +22,7 @@ Standard library only. Configured through environment variables:
   POLL_SECONDS        default 5
   MXL_INFO            default mxl-info
 """
+import http.client
 import json
 import logging
 import os
@@ -123,18 +124,25 @@ class Registrar:
         self.device_id = derived_id("device", workload, domain)
         self.registered = {}  # flow id -> source id
         self.node_ok = False
+        self.timeout = 5
 
     def _call(self, method: str, path: str, body=None) -> int:
+        """The HTTP status, or 0 if the registry couldn't be reached. Right after a facility start
+        it may not answer yet; every caller tries again on the next poll, so this must not raise."""
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
                                      headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                return resp.status
-        except urllib.error.HTTPError as exc:
-            if exc.code >= 400 and exc.code != 404:
-                log.warning("%s %s -> %s %s", method, path, exc.code, exc.read()[:300])
-            return exc.code
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    return resp.status
+            except urllib.error.HTTPError as exc:
+                if exc.code >= 400 and exc.code != 404:
+                    log.warning("%s %s -> %s %s", method, path, exc.code, exc.read()[:300])
+                return exc.code
+        except (OSError, http.client.HTTPException) as exc:  # timeouts, refused or dropped connections
+            log.warning("%s %s: NMOS registry not reachable (%s); retrying on the next poll", method, path, type(exc).__name__)
+            return 0
 
     def _register(self, rtype: str, data: dict) -> bool:
         return self._call("POST", "/resource", {"type": rtype, "data": data}) in (200, 201)

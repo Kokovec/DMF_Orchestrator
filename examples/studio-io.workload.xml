@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workload xmlns="urn:dmf:workload:v1" schemaVersion="1" apiVersion="dmf-toolkit/v1alpha4" id="studio-io" uid="92662c94-5eb9-58c6-b618-08b3250e0acd" name="Studio IO" revision="1" libraryVersion="4.0.2">
+  <description>Stage 5 live test: one MXL camera, an SRT listener and an SRT caller input, SRT caller and RTMP outputs, and recording.</description>
+  <defaults>
+    <video grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" colorspace="BT709" />
+    <audio sampleRateNum="48000" sampleRateDen="1" channelCount="2" />
+    <mxl historyMs="500" />
+  </defaults>
+  <access>
+    <role name="director">
+      <member>director1</member>
+    </role>
+    <role name="audio">
+      <member>audio1</member>
+    </role>
+    <role name="viewer">
+      <member>viewer1</member>
+    </role>
+  </access>
+  <domains>
+    <domain id="main" />
+  </domains>
+  <functions>
+    <function id="cam1" type="dmf-mxl.1" typeVersion="1.0.0" name="Camera 1" domain="main">
+      <outputs>
+        <use block="mxl" copies="1" />
+      </outputs>
+      <parameters>
+        <value path="pattern.pattern.pattern" type="string">smpte</value>
+        <value path="mxl.format.video.frameSize" type="string">1920x1080</value>
+        <value path="mxl.format.video.rate" type="string">29.97</value>
+        <value path="mxl.format.video.scan" type="string">progressive</value>
+        <value path="mxl.format.video.colorspace" type="string">BT709</value>
+        <value path="mxl.format.video.transfer" type="string">SDR</value>
+        <value path="mxl.format.audio.channels" type="integer">2</value>
+      </parameters>
+      <control>
+        <health type="exec" />
+      </control>
+      <resources cpu="0.25" memoryMiB="256" />
+      <discovery register="true" />
+    </function>
+    <function id="vision-mixer" type="switchframe.1" typeVersion="1.1.0" name="Vision mixer" domain="main">
+      <inputs>
+        <use block="srt-src" copies="2" />
+        <use block="moq-src" copies="0" />
+        <use block="mxl-src" copies="1" />
+        <use block="st2110-src" copies="0" />
+      </inputs>
+      <outputs>
+        <use block="srt-out" copies="1" />
+        <use block="rtmp-out" copies="1" />
+        <use block="mxl-out" copies="1" />
+        <use block="st2110-out" copies="0" />
+      </outputs>
+      <features>
+        <feature block="captions" enabled="false" />
+        <feature block="captions.asr" enabled="false" />
+        <feature block="scte35" enabled="false" />
+        <feature block="scte35.scte104" enabled="false" />
+        <feature block="replay" enabled="true" />
+        <feature block="playout" enabled="false" />
+        <feature block="ai-segment" enabled="false" />
+        <feature block="recording" enabled="true" />
+      </features>
+      <parameters>
+        <value path="mxl-src.source.delayMs" type="integer">0</value>
+        <value path="mxl-src.source.label" type="string">Camera 1</value>
+        <value path="mxl-src.source.position" type="integer">1</value>
+        <value path="mxl-src.audio.trimDb" type="integer">0</value>
+        <value path="mxl-src.audio.afv" type="boolean">true</value>
+        <value path="mxl-src.audio.delayMs" type="integer">0</value>
+        <value path="mxl-src.audio.highPass.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.gate.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.eq.low.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.eq.mid.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.eq.high.enabled" type="boolean">false</value>
+        <value path="mxl-src.audio.compressor.thresholdDb" type="integer">0</value>
+        <value path="mxl-src.audio.compressor.ratio" type="integer">1</value>
+        <value path="mxl-src.audio.compressor.attackMs" type="integer">5</value>
+        <value path="mxl-src.audio.compressor.releaseMs" type="integer">100</value>
+        <value path="mxl-src.audio.compressor.makeupGainDb" type="integer">0</value>
+        <value path="mxl-src.key.type" type="string">off</value>
+        <value path="engine.engine.resolution" type="string">1920x1080</value>
+        <value path="engine.engine.rate" type="string">29.97</value>
+        <value path="engine.engine.scan" type="string">progressive</value>
+        <value path="engine.engine.colorProfile" type="string">standard</value>
+        <value path="engine.engine.colorspace" type="string">BT709</value>
+        <value path="engine.engine.frameSync" type="string">off</value>
+        <value path="engine.engine.frameRateConversion" type="string">none</value>
+        <value path="engine.engine.onAirAtStart" type="string">srt-src</value>
+        <value path="audio.master.limiter.thresholdDb" type="integer">-3</value>
+        <value path="audio.master.limiter.ceilingDb" type="integer">-1</value>
+        <value path="encoder.encoder.bitrateMbps" type="integer">6</value>
+        <value path="encoder.encoder.gopSeconds" type="integer">1</value>
+        <value path="encoder.encoder.preset" type="string">low-latency</value>
+        <value path="encoder.encoder.timecode" type="boolean">false</value>
+        <value path="replay.replay.bufferSeconds" type="integer">300</value>
+        <value path="replay.replay.shutterAngle" type="integer">180</value>
+        <value path="clips.clips.storageMaxGB" type="integer">10</value>
+        <value path="clips.clips.ephemeralTtlHours" type="integer">24</value>
+        <value path="control.control.previewProxy" type="boolean">true</value>
+        <value path="control.control.previewResolution" type="string">480p</value>
+        <value path="control.control.previewBitrateKbps" type="integer">500</value>
+        <value path="control.control.relayResolution" type="string">720p</value>
+        <value path="control.control.relayBitrateKbps" type="integer">2000</value>
+        <value path="control.network.exposure" type="string">wan-facing</value>
+        <value path="control.network.pathA" type="emptyObject" />
+        <value path="srt-src.srt.mode" type="string">listener</value>
+        <value path="srt-src.srt.streamId" type="string">venue1</value>
+        <value path="srt-src.srt.latencyMs" type="integer">200</value>
+        <value path="srt-src.source.label" type="string">Venue 1</value>
+        <value path="srt-src_2.srt.mode" type="string">caller</value>
+        <value path="srt-src_2.srt.streamId" type="string">venue2</value>
+        <value path="srt-src_2.srt.address" type="string">172.17.0.1:9000</value>
+        <value path="srt-src_2.srt.latencyMs" type="integer">200</value>
+        <value path="srt-src_2.source.label" type="string">Venue 2</value>
+        <value path="srt-out.srt.mode" type="string">caller</value>
+        <value path="srt-out.srt.address" type="string">172.17.0.1</value>
+        <value path="srt-out.srt.port" type="integer">9100</value>
+        <value path="srt-out.srt.latencyMs" type="integer">200</value>
+        <value path="srt-out.srt.streamId" type="string">pgm</value>
+        <value path="srt-out.srt.encryption" type="string">aes-128</value>
+        <value path="srt-out.srt.passphrase" type="secret">srt-out-passphrase</value>
+        <value path="rtmp-out.rtmp.url" type="string">rtmp://172.17.0.1:1935/live</value>
+        <value path="rtmp-out.rtmp.streamKey" type="secret">rtmp-stream-key</value>
+        <value path="recording.recording.rotateAfterMinutes" type="integer">1</value>
+        <value path="recording.recording.filenamePrefix" type="string">studio-io</value>
+        <value path="recording.recording.storageGiB" type="integer">5</value>
+      </parameters>
+      <control>
+        <health type="http" port="9090" path="/health" />
+      </control>
+      <resources cpu="2" memoryMiB="4096" />
+      <discovery register="true" />
+    </function>
+  </functions>
+  <flows>
+    <flow id="cc625c27-6ed2-5ad5-8f00-6a7d54250c98" label="cam1/mxl.video" domain="main" essence="video" writer="cam1/mxl.video" historyMs="500">
+      <reader>vision-mixer/mxl-src.video</reader>
+      <format mediaType="video/v210" grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" interlace="progressive" colorspace="BT709" transfer="SDR" />
+      <discovery register="true" />
+    </flow>
+    <flow id="36ab1bda-c554-5dfc-b1f2-94f8bf3b170d" label="cam1/mxl.audio" domain="main" essence="audio" writer="cam1/mxl.audio" historyMs="500">
+      <reader>vision-mixer/mxl-src.audio</reader>
+      <format mediaType="audio/float32" sampleRateNum="48000" sampleRateDen="1" channelCount="2" />
+      <discovery register="true" />
+    </flow>
+    <flow id="a84c6860-650b-50c3-8ccd-b5a4ad4f1bb4" label="vision-mixer/mxl-out.video" domain="main" essence="video" writer="vision-mixer/mxl-out.video" historyMs="500">
+      <format mediaType="video/v210" grainRateNum="30000" grainRateDen="1001" frameWidth="1920" frameHeight="1080" interlace="progressive" colorspace="BT709" />
+      <discovery register="true" />
+    </flow>
+    <flow id="9852a7f7-2e0d-506f-bab5-d0399b31c424" label="vision-mixer/mxl-out.audio" domain="main" essence="audio" writer="vision-mixer/mxl-out.audio" historyMs="500">
+      <format mediaType="audio/float32" sampleRateNum="48000" sampleRateDen="1" channelCount="2" />
+      <discovery register="true" />
+    </flow>
+  </flows>
+  <wires>
+    <wire from="cam1/mxl.video" to="vision-mixer/mxl-src.video" />
+    <wire from="cam1/mxl.audio" to="vision-mixer/mxl-src.audio" />
+  </wires>
+</workload>

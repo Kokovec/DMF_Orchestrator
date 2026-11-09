@@ -33,3 +33,22 @@ spec:
     requests:
       storage: {{ .Values.cache.size }}
 {{- end }}
+{{- if .Values.recordings.size }}
+---
+# Programme recordings (POST /api/recording/start into /recordings). FINALISE copies them to the
+# archive before anything is destroyed: the local-path volume goes with the workload.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "switchframe.fullname" . }}-recordings
+  labels:
+    {{- include "switchframe.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.recordings.size }}
+{{- end }}

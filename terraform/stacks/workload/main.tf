@@ -43,11 +43,6 @@ locals {
   mixer     = try(local.mixers[local.mixer_key], { format = "1080p29.97", sources = [] })
   rate      = try(local.formats[local.mixer.format], local.formats["1080p29.97"])
 
-  # Generated workloads (dmf.local/v1alpha2) come with the compiled SwitchFrame config, beside
-  # the workload file. Hand-written ones have none.
-  generated = can(local.mixer.configFile)
-  config    = local.generated ? jsondecode(file("${dirname(var.workload_file)}/${local.mixer.configFile}")) : null
-
   # Flow identity (JT-NM / DMF RA: uniquely identified Flows of timestamped Grains).
   # A generated workload carries the IDs DMF Toolkit published (decision D7). Otherwise
   # deterministic UUIDs, so re-provisioning a workload keeps the same flow ids.
@@ -55,18 +50,42 @@ locals {
     "${pair[0]}/${pair[1]}" => try(local.functions[pair[0]].flows[pair[1]],
   uuidv5("url", "dmf://${local.name}/${pair[0]}/${pair[1]}")) }
 
-  # Programme source and source labels, restored by the pod's postStart hook. A generated
-  # workload names its on-air source (absent when its key is only known at runtime) and takes
-  # labels from the config; a hand-written one starts on its first source, labelled by function.
-  program_source = local.generated ? try(local.mixer.programSource, "") : (
-    length(local.mixer.sources) > 0 ? "mxl:${local.flow_id["${local.mixer.sources[0]}/video"]}" : ""
-  )
-  labels = local.generated ? flatten([for s in local.config.sources : [
-    for c in s.apply : { source = s.ref.key, label = c.body.label } if c.path == "/api/sources/{key}/label"
-    ] if s.ref.kind == "mxl"]) : [for s in local.mixer.sources : {
-    source = "mxl:${local.flow_id["${s}/video"]}"
-    label  = try(local.functions[s].label, s)
-  }]
+  # The reconciler's config (images/media-functions/sf-reconciler). A generated workload
+  # (dmf.local/v1alpha2) comes with the compiled one beside the workload file. A hand-written
+  # one gets what the chart's postStart hook used to restore: its first source on air, and each
+  # source labelled by its function.
+  generated = can(local.mixer.configFile)
+  hand_config = {
+    apiVersion = "dmf.local/v1alpha1"
+    kind       = "SwitchFrameConfig"
+    workload   = local.name
+    function   = local.mixer_key
+    revision   = 0
+    program = length(local.mixer.sources) > 0 ? {
+      input = local.mixer.sources[0]
+      ref   = { kind = "mxl", key = "mxl:${local.flow_id["${local.mixer.sources[0]}/video"]}" }
+    } : null
+    sources = [for s in local.mixer.sources : {
+      input = s
+      ref   = { kind = "mxl", key = "mxl:${local.flow_id["${s}/video"]}" }
+      apply = [{ method = "POST", path = "/api/sources/{key}/label", body = { label = try(local.functions[s].label, s) } }]
+    }]
+    global       = []
+    destinations = []
+    recording    = null
+  }
+  # A tuple index, because a conditional can't return two objects of different types.
+  config = [
+    local.hand_config,
+    local.generated ? jsondecode(file("${dirname(var.workload_file)}/${try(local.mixer.configFile, "")}")) : null,
+  ][local.generated ? 1 : 0]
+
+  # Secret values the config refers to by name: .state/secrets/<id>.yaml (make secret-set),
+  # into the workload-refs Secret. Only the referenced ones leave the file.
+  secret_refs = toset(flatten([for d in try(local.config.destinations, []) : concat(
+    values(try(d.secretFields, {})), try([d.secretUrlSuffix], [])
+  )]))
+  secret_values = var.secrets_file != "" && fileexists(var.secrets_file) ? try(tomap(yamldecode(file(var.secrets_file))), {}) : {}
 
   video_flow = { for fn, f in local.functions : fn => {
     id             = local.flow_id["${fn}/video"]
@@ -245,6 +264,24 @@ resource "kubernetes_secret_v1" "switchframe" {
   }
 }
 
+# Values the reconciler mounts as files (/etc/switchframe/secrets/<name>): an SRT output's
+# passphrase, an RTMP stream key. They reach Terraform state, which is local and git-ignored and
+# already holds this workload's tokens.
+resource "kubernetes_secret_v1" "workload_refs" {
+  metadata {
+    name      = "workload-refs"
+    namespace = kubernetes_namespace_v1.workload.metadata[0].name
+  }
+  data = sensitive({ for n in local.secret_refs : n => trimspace(tostring(local.secret_values[n])) if can(local.secret_values[n]) })
+
+  lifecycle {
+    precondition {
+      condition     = alltrue([for n in local.secret_refs : can(local.secret_values[n])])
+      error_message = "Secrets ${join(", ", [for n in local.secret_refs : n if !can(local.secret_values[n])])} are missing from ${var.secrets_file}: make secret-set WORKLOAD=${local.name} NAME=<name>."
+    }
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Application & UI security: per-workload OIDC client and role groups
 # ---------------------------------------------------------------------------
@@ -372,10 +409,12 @@ resource "helm_release" "mixer" {
     image       = { repository = local.images.switchframe, tag = var.image_tag }
     imageId     = try(local.image_ids["switchframe"], "")
     podSecurity = { uid = local.mx.uid, gid = local.mx.gid }
-    # Restored by the pod itself on every start: SwitchFrame forgets both.
-    configure = {
-      programSource = local.program_source
-      labels        = local.labels
+    # Applied by the pod's reconciler, on every start and as sources appear: SwitchFrame
+    # forgets its programme source, source settings, destinations and recording.
+    config = local.config
+    reconciler = {
+      image   = { repository = local.images.mxl_tools, tag = var.image_tag }
+      imageId = try(local.image_ids["mxl-tools"], "")
     }
     mxl = {
       domainPath = local.domain_path
@@ -417,13 +456,12 @@ resource "helm_release" "mixer" {
     # Generated workloads only, so a hand-written one's values stay as they were. A for
     # expression, because a conditional can't return this object or {}: their types differ.
     [for g in(local.generated ? [true] : []) : {
-      # The compiled config, for the reconciler (stage 5). Nothing in the pod reads it yet.
-      config      = local.config
       persistence = { size = "${local.mixer.volumes.stateGi}Gi" }
       cache       = { size = "${local.mixer.volumes.cacheGi}Gi" }
+      recordings  = { size = can(local.mixer.volumes.recordingsGi) ? "${local.mixer.volumes.recordingsGi}Gi" : "" }
     }]...
 
   ))]
   # Sources must be writing before SwitchFrame opens their flows.
-  depends_on = [helm_release.source, kubernetes_secret_v1.sso, keycloak_group_memberships.role, keycloak_openid_group_membership_protocol_mapper.groups]
+  depends_on = [helm_release.source, kubernetes_secret_v1.sso, kubernetes_secret_v1.workload_refs, keycloak_group_memberships.role, keycloak_openid_group_membership_protocol_mapper.groups]
 }

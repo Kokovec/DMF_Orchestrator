@@ -27,12 +27,13 @@ spec:
               {{- include "switchframe.gatewaySelector" . | nindent 14 }}
       ports:
         - {port: {{ .Values.switchframe.httpPort }}, protocol: TCP}
-    # Monitoring: Prometheus scrape (bearer-token protected) and kubelet probes.
+    # Monitoring: Prometheus scrape (SwitchFrame's is bearer-token protected) and kubelet probes.
     - from:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: {{ $np.monitoringNamespace }}}
       ports:
         - {port: {{ .Values.switchframe.adminPort }}, protocol: TCP}
+        - {port: {{ .Values.reconciler.metricsPort }}, protocol: TCP}
   egress:
     - ports:
         - {port: 53, protocol: UDP}

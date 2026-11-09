@@ -29,7 +29,7 @@ BECOME       ?= --ask-become-pass
 SKIP_PREFLIGHT ?=
 PREFLIGHT    := $(if $(SKIP_PREFLIGHT),true,scripts/preflight.sh)
 
-.PHONY: help prereqs infra hosts images platform import deploy facility-export plan provision status start stop finalise up \
+.PHONY: help prereqs infra hosts images platform import deploy facility-export secret-set plan provision status start stop finalise up \
         destroy windows-browser trust-ca secrets nmos-query lint validate clean
 
 help:
@@ -68,6 +68,10 @@ deploy: ## DESIGN to PROVISION: import XML, then plan and provision the workload
 facility-export: ## Write .state/facility-<FACILITY>.json for DMF Toolkit (DMF_FACILITY)
 	@$(PYTHON) -m tools.dmf_compile facility-export --facility "$(FACILITY)"
 
+secret-set: ## Set a workload secret, prompted without echo (WORKLOAD=<id> NAME=<name>); then make provision
+	@test -n "$(NAME)" -a "$(origin WORKLOAD)" != file || { echo "usage: make secret-set WORKLOAD=<id> NAME=<name>"; exit 2; }
+	@$(PYTHON) -I $(ROOT)/scripts/secret-set.py "$(ROOT)/.state/secrets" "$(WORKLOAD)" "$(NAME)"
+
 plan: ## PLAN: validate design, capacity check, terraform plan
 	@$(PREFLIGHT)
 	$(PLAYBOOK) playbooks/workload-plan.yml -e workload=$(WORKLOAD)
@@ -85,8 +89,8 @@ start: ## Start the facility, wait for WORKLOAD and open Chrome (WSL; NO_BROWSER
 stop: ## Stop the facility and release its memory, leaving WSL free for other work
 	@scripts/facility.sh stop $(WORKLOAD)
 
-finalise: ## FINALISE & REVIEW: archive, tear down, release Flow Domain
-	$(PLAYBOOK) playbooks/workload-finalise.yml -e workload=$(WORKLOAD) $(BECOME)
+finalise: ## FINALISE & REVIEW: archive (recordings first), tear down, release Flow Domain [DISCARD_RECORDINGS=1]
+	$(PLAYBOOK) playbooks/workload-finalise.yml -e workload=$(WORKLOAD) $(if $(DISCARD_RECORDINGS),-e dmf_discard_recordings=true) $(BECOME)
 
 up: infra hosts images platform plan provision ## Everything, end to end
 

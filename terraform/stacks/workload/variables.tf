@@ -29,3 +29,9 @@ variable "image_registry" {
   type    = string
   default = "dmf.local"
 }
+
+variable "secrets_file" {
+  description = "The workload's secret values, .state/secrets/<id>.yaml (make secret-set). Only the ones its config refers to are used."
+  type        = string
+  default     = ""
+}

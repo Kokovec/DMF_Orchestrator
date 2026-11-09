@@ -174,15 +174,10 @@ class Consumers(RepoTest):
         wl = yaml.safe_load((self.repo.gen / f"{wid}.yaml").read_text())
         config = json.loads((self.repo.gen / f"{wid}.config.json").read_text())
         mixer = next(f for f in wl["spec"]["functions"] if f["kind"] == "switchframe")
-        labels = []
-        for s in config["sources"]:
-            label = next((c["body"]["label"] for c in s["apply"] if c["path"].endswith("/label")), None)
-            if s["ref"].get("kind") == "mxl" and label:
-                labels.append({"source": s["ref"]["key"], "label": label})
         values = {
             "workload": wid,
             "podSecurity": {"uid": wl["spec"]["mediaExchange"]["uid"], "gid": wl["spec"]["mediaExchange"]["gid"]},
-            "configure": {"programSource": mixer.get("programSource", ""), "labels": labels},
+            "config": config,
             "mxl": {"domainPath": f"/var/lib/dmf/mxl/{wl['spec']['mediaExchange']['domain']}",
                     "sources": mixer["mxlSources"],
                     "output": {"enabled": mixer["programOutput"], "name": "program",
@@ -192,6 +187,7 @@ class Consumers(RepoTest):
                             "existingSecret": "switchframe-tokens", "resources": mixer["resources"],
                             "goMemLimit": mixer["goMemLimit"]},
             "persistence": {"size": f"{mixer['volumes']['stateGi']}Gi"},
+            "recordings": {"size": f"{mixer['volumes']['recordingsGi']}Gi" if "recordingsGi" in mixer["volumes"] else ""},
             "ingress": {"hostname": wl["spec"]["access"]["hostname"]},
             "sso": {"issuerUrl": "https://keycloak.dmf.test/realms/dmf", "internalUrl": "http://keycloak:8080/realms/dmf",
                     "existingSecret": "sso-gateway"},
@@ -228,7 +224,28 @@ class Consumers(RepoTest):
                 self.assertIn({"name": "GOMEMLIMIT", "value": mixer["goMemLimit"]}, sf["env"])
                 self.assertEqual(sf["resources"], mixer["resources"])
                 self.assertIn(f"storage: {mixer['volumes']['stateGi']}Gi", out)
-                self.assertIn(f'- "{mixer["programSource"]}"', out)
+                self.assertNotIn("lifecycle", sf, "the postStart hook is gone: the reconciler replaces it")
+                # The reconciler reads the compiled config, unchanged, from the ConfigMap.
+                rec = dep["spec"]["template"]["spec"]["containers"][1]
+                self.assertEqual(rec["name"], "reconciler")
+                self.assertEqual(rec["command"], ["python3", "-I", "/usr/local/bin/sf-reconciler"])
+                self.assertFalse(rec["securityContext"]["allowPrivilegeEscalation"])
+                # Its record of managed SRT callers is on the state volume, so it outlives the pod.
+                self.assertIn({"name": "state", "mountPath": "/var/lib/switchframe"}, rec["volumeMounts"])
+                cm = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "t-config")
+                self.assertEqual(json.loads(cm["data"]["config.json"]), json.loads((self.repo.gen / f"{wid}.config.json").read_text()))
+                mounts = {m["mountPath"] for m in sf["volumeMounts"]}
+                pvcs = {d["metadata"]["name"]: d for d in docs if d["kind"] == "PersistentVolumeClaim"}
+                if "recordingsGi" in mixer["volumes"]:
+                    self.assertIn("/recordings", mounts)
+                    self.assertEqual(pvcs["t-recordings"]["spec"]["resources"]["requests"]["storage"],
+                                     f"{mixer['volumes']['recordingsGi']}Gi")
+                else:
+                    self.assertNotIn("/recordings", mounts)
+                    self.assertNotIn("t-recordings", pvcs)
+                # Prometheus reaches its metrics port.
+                np = next(d for d in docs if d["kind"] == "NetworkPolicy" and d["metadata"]["name"] == "t")
+                self.assertIn({"port": 9103, "protocol": "TCP"}, np["spec"]["ingress"][2]["ports"])
 
     def test_helm_template_keeps_data_flows_and_quotes_args(self):
         _, mixer, values = self.mixer_values("studio-a")
@@ -251,7 +268,7 @@ class Consumers(RepoTest):
         cache = next(v for v in dep["spec"]["template"]["spec"]["volumes"] if v["name"] == "cache")
         self.assertEqual(cache, {"name": "cache", "persistentVolumeClaim": {"claimName": "t-cache"}})
         pvcs = {d["metadata"]["name"]: d["spec"]["resources"]["requests"]["storage"] for d in docs if d["kind"] == "PersistentVolumeClaim"}
-        self.assertEqual(pvcs, {"t-state": "21Gi", "t-cache": "68Gi"})
+        self.assertEqual(pvcs, {"t-state": "21Gi", "t-cache": "68Gi", "t-recordings": "100Gi"})
         cm = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"].endswith("-config"))
         self.assertEqual(json.loads(cm["data"]["config.json"]), values["config"])
 
