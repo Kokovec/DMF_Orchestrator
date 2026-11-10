@@ -156,6 +156,12 @@ match the library, which catalog loading then replaces.
 | `switcher.scte104` | `scte104` |
 | `srt-out.srt.mode = listener` | `srt-listener-out` |
 
+These are product limits, so they apply with or without a facility (found in stage 6):
+
+- `publishProblems` refuses an `rtmp-out` copy with a `standard-hevc` or `professional` colour profile. The dialog says why.
+- EQ and limiter ranges match the mixer's, as listed in [02-switchframe-options.md](02-switchframe-options.md). Narrowing needs no module version bump while no saved workload uses the version.
+- Help text: an enabled key is over programme all the time. A replay buffer of 300 s holds only up to about 5.6 Mbit/s per source. The SCTE-35 default rule `drop` applies to every cue with no matching rule, including operators' cues. An all-features 1080p design should request 4 CPUs.
+
 ## 9. XML publish (stage 2; extends R8.2)
 
 - `GET /api/workloads/:id/published.xml[?revision=N]`, `content-type: application/xml; charset=utf-8`. Same 422 and publish checks as the JSON route; serialisation failures are also 422.

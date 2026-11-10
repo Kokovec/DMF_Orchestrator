@@ -48,7 +48,7 @@ GET /api/workloads/:id/published.xml ──►   4. write workloads/<id>.yaml + 
 ## Environment facts
 
 - **Two WSL distros.** Toolkit: distro `Ubuntu`, `/home/dansi/DMF_Toolkit`. Orchestrator: distro `Ubuntu-24.04`, `/home/dansi/switchframe-dmf`.
-- **Cross-distro paths:** `/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit` and `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf`. Both work from both distros.
+- **Cross-distro paths:** `/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit` and `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf`. They exist only while each distro has bind-mounted itself there, which isn't automatic: both were missing on 2026-11-09. To expose a distro, run this in it, with its own name: `sudo mkdir -p /mnt/wsl/instances/<distro> && sudo mount --bind / /mnt/wsl/instances/<distro>`.
 - **Node:** v24 under nvm in `Ubuntu` only (`~/.nvm/versions/node/v24.21.0/bin`). Not on `PATH` in non-interactive shells, and absent from `Ubuntu-24.04`.
 - **Facility:** Docker, k3s, Terraform, Helm and Ansible run in `Ubuntu-24.04`, with tools in `.tools/bin` and Python tools in `.tools/venv`. k3s is stopped until `make start`.
 - **No browser in `Ubuntu`:** the toolkit UI has been tested through a jsdom harness kept outside its repo.

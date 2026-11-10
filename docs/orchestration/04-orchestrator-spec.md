@@ -76,6 +76,8 @@ Refuse with a message naming function and parameter. Report all problems, not ju
 6. Every required secret exists in `.state/secrets/<id>.yaml`. Stage 5 onward.
 7. No hand-written `workloads/<id>.yaml` exists for this id. The generated header is information only.
 8. Other things the generated YAML must satisfy: everything `workload-plan.yml` asserts.
+9. No `rtmp-out` copies with a `standard-hevc` or `professional` colour profile. The product can't transcode them and reports success while sending nothing.
+10. The workload's `uid` (from the XML, not its POSIX UID) and flow IDs aren't used by another workload in `.state/allocations.json`, which stores both. Two running workloads with the same flow IDs conflict in NMOS.
 
 Refuse a `streamId` used by more than one SRT input of a function: listeners and callers share keys.
 
@@ -84,21 +86,24 @@ Refuse `--demo` in any args.
 
 ## Allocation (`allocate.py`)
 
-`.state/allocations.json` maps workload id → `{uid, quicPort, srtPort}`. Re-importing keeps the
+`.state/allocations.json` maps workload id → `{uid, quicPort, srtPort}` plus the XML uid and flow IDs for rule 10. Re-importing keeps the
 allocation; new workloads take the lowest free values. `finalise` releases them.
 
 - `uid = gid`, from `workloadUids`. `hostname = <id>.<baseDomain>`, `domain = <id>`.
 - `plan` adds a port check to the existing UID and domain check: its task name says ports, but today it doesn't check them.
+- `plan` refuses a generated workload whose state, cache or recordings size differs from its live PVC, in either direction, naming the volume, both sizes and the two ways out: restore the value, or finalise and deploy again. `local-path` has no expansion, and a changed size otherwise fails partway through the apply and leaves the Deployment changed. PVC sizes are fixed after first provision.
+- `plan` refuses a design that turns recording off while the workload has a live recordings PVC. The chart would delete the PVC, and `local-path` its files, on the next apply, which bypasses D9. The way out is to keep recording on, or finalise (which archives recordings) and deploy again.
+- `plan` refuses a workload whose new PVCs total more than the free disk under the `local-path` root. `local-path` doesn't enforce a PVC's size, so nothing else catches this.
 - A hand-written workload's UID, domain and ports (`news-studio`: 20001, 8443, 6464) always count as taken: the compiler can't see the cluster, and the workload could be deployed later.
 
 ## Sizing (`sizing.py`)
 
 - **MXL domain** (measured in stage 4: 106 MiB used by `studio-a`): `sizeMiB = max(512, ceil(1.25 × (Σ video flows grains × V210 frame bytes + 1 MiB per audio flow) / 2²⁰) + 256)`, with `grains = max(5, ceil(historyMs × rate / 1000))`. V210 frame bytes = `ceil(width / 6) × 16 × height`. `studio-a`: 657 MiB; 2160p59.94 with 4 flows: 3426 MiB.
-- **Pods:** `switchframe` from `resources` (see options doc); test sources 250m/256Mi requests, 1/1Gi limits; flow agent 50m/64Mi; gateway 30m/56Mi; reconciler 20m/32Mi.
+- **Pods:** `switchframe` from `resources` (see options doc), with the replay tmpfs added to its memory request and limit but not to `GOMEMLIMIT`, because the Go heap doesn't hold it; test sources 250m/256Mi requests, 1/1Gi limits; flow agent 50m/64Mi; gateway 30m/56Mi; reconciler 20m/32Mi.
 - **Capacity check:** `capacity.py` counts every workload's Flow Domain (tmpfs is RAM) as reserved, not only this one's.
 - **Quota:** `requests.cpu` and `requests.memory` = sum of pod requests + 20%, rounded up. Compare `news-studio`'s hand-set 7 CPU and 10 GiB when reviewing: the new value will be lower, and that is correct as long as pods schedule.
-- **Volumes:** state PVC = `clips.storageMaxGB + 1` GiB, floor 5. Recordings PVC = `recording.storageGiB`. `/cache` is a PVC, not an emptyDir, sized ST-map prewarm + 2 GiB, plus `playout.cacheMaxGB` when playout is on. SwitchFrame prewarms the ST-map tables on every start into `--cache-dir` and skips tables already there (`stmap.DirComplete`), so a PVC generates them once per workload. An emptyDir regenerates about 16 GiB, 3 minutes of CPU, at each restart; at 5 GiB it caused evictions every 20–90 s in stage 4. Prewarm = 5 effects × 90 frames × 18 bytes per pixel: 9 GiB at 720p, 18 at 1080p, 65 at 2160p. Finalise doesn't archive it: it's regenerable.
-- **Replay tmpfs:** the chart's 1 GiB stays for stage 4. Stage 6 measures use at 300 s for 3 sources, then sets a formula. It counts against pod memory.
+- **Volumes:** state PVC = `max(5, clips.storageMaxGB + 1 + playout.cacheMaxGB when playout is on)` GiB; the playout cache is in `<state dir>/playout-cache`. Recordings PVC = `recording.storageGiB`. `/cache` is a PVC, not an emptyDir, sized ST-map prewarm + 2 GiB. SwitchFrame prewarms the ST-map tables on every start into `--cache-dir` and skips tables already there (`stmap.DirComplete`), so a PVC generates them once per workload. An emptyDir regenerates about 16 GiB, 3 minutes of CPU, at each restart; at 5 GiB it caused evictions every 20–90 s in stage 4. Prewarm = 5 effects × 90 frames × 18 bytes per pixel, so the `/cache` PVC is 9 GiB at 720p, 18 at 1080p (16 of tables + 2) and 65 at 2160p. Finalise doesn't archive it: it's regenerable.
+- **Replay tmpfs:** `min(sources, 8) × 200 + 64` MiB, nothing when replay is off. The product gives each source one 200 MiB ring whatever the buffer length, and every ring ends up full, measured in stage 6 (evidence in `sizing.py`). Sized for designed sources: an operator-added source also takes a ring, and if the tmpfs fills, the product's replay writes fail rather than the pod.
 
 ## Where generated files go
 

@@ -8,15 +8,16 @@ Run in two parts. Part A in distro `Ubuntu`, working directory `/home/dansi/DMF_
 
 You're working on DMF Toolkit, a configurator for EBU Dynamic Media Facility workloads. The orchestrator now refuses options the facility can't honour. This stage shows that in the design tool, so users don't design what can't deploy.
 
-Read first: `CLAUDE.md`, `docs/design-rules.md`, and section 8 of `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/docs/orchestration/03-toolkit-spec.md`. That repo is read-only here. The exported file is at `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/.state/facility-local.json`. If it's missing, ask me to run `make facility-export` there.
+Read first: `CLAUDE.md`, `docs/design-rules.md`, and section 8 of `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/docs/orchestration/03-toolkit-spec.md`. That repo is read-only here. The exported file is at `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/.state/facility-local.json`. If it's missing, ask me to run `make facility-export` there. If that whole path is missing, ask me to expose it by running this in `Ubuntu-24.04`: `sudo mkdir -p /mnt/wsl/instances/Ubuntu-24.04 && sudo mount --bind / /mnt/wsl/instances/Ubuntu-24.04`.
 
 Node 24: `export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"`.
 
-Implement section 8. Keep the toolkit's rule that it makes no infrastructure decisions: it only shows what the facility declares, and with no facility set everything stays offered. Update design rules and the contract doc.
+Implement section 8, including the product limits listed after its table: RTMP with an HEVC colour profile, the mixer's EQ and limiter ranges, and the help texts. Compare the catalog's ranges with `tools/dmf_compile/products/switchframe.py` in that repo and report any other value the compiler would refuse. Keep the toolkit's rule that it makes no infrastructure decisions: it only shows what the facility declares, and with no facility set everything stays offered. The product limits are the exception, because no facility can honour them. Update design rules and the contract doc.
 
 Acceptance, shown with real output:
 - With `DMF_FACILITY` set: ST 2110, MoQ, speech-to-text, neural key, AI background removal, SCTE-104, and SRT listener output are disabled, with a reason. A workload saved earlier that uses one gets a publish problem naming it. Exercise this with the jsdom harness and state what it doesn't prove.
-- With it unset: everything's offered, and existing behaviour is unchanged.
+- With it unset: everything's offered, and existing behaviour is unchanged, except for the product limits.
+- RTMP with `standard-hevc` or `professional` gets a publish problem naming the output and the profile, with and without a facility.
 - The capability list here and the keys in the export match exactly, with a test.
 - `npm run build` and `npm run lint` pass.
 
