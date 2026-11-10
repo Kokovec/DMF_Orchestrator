@@ -55,6 +55,17 @@
           or port {{ dmf_workload.spec.access.quicPort }}/{{ dmf_workload.spec.access.srtPort | default('-') }}
           already used by another workload
 
+    - name: Volume check (live sizes, free disk)
+      ansible.builtin.command: "python3 {{ dmf_repo_root }}/ansible/scripts/storage.py {{ workload_file }} {{ dmf_kubeconfig }}"
+      register: storage
+      changed_when: false
+      failed_when: false
+
+    - name: Stop if the volumes can't be provisioned
+      ansible.builtin.fail:
+        msg: "{{ (storage.stdout | from_json).problems }}"
+      when: storage.rc != 0
+
     - name: Capacity check (reserve without oversubscription)
       ansible.builtin.command: "python3 {{ dmf_repo_root }}/ansible/scripts/capacity.py {{ workload_file }} {{ dmf_kubeconfig }}"
       register: capacity

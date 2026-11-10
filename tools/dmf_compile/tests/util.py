@@ -4,6 +4,7 @@ import os
 import shutil
 import tempfile
 import unittest
+import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -19,6 +20,7 @@ GOLDEN = Path(__file__).resolve().parent / "golden"
 TOOLKIT_FIXTURES = Path(os.environ.get(
     "DMF_TOOLKIT_FIXTURES", "/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit/scripts/fixtures"))
 NS = reader.NS
+UID_NAMESPACE = uuid.UUID("9e6d3b0a-7c1f-5d4e-8a2b-1f0c3d5e7a9b")  # 01-contract.md, Flow identity
 ET.register_namespace("", NS)
 
 
@@ -191,7 +193,21 @@ class Doc:
         return self
 
     def rename(self, workload_id):
+        """A new id with its own uid and flow IDs, by the contract's derivation (01-contract.md)."""
         self.root.set("id", workload_id)
+        uid = uuid.uuid5(UID_NAMESPACE, workload_id)
+        self.root.set("uid", str(uid))
+        renames = {}
+        for flow in self.root.iter(q("flow")):
+            new = str(uuid.uuid5(uid, flow.get("writer")))
+            renames[flow.get("id")] = new
+            flow.set("id", new)
+        for el in self.root.iter():
+            for attr, value in el.attrib.items():
+                if value in renames:
+                    el.set(attr, renames[value])
+            if el.text and el.text.strip() in renames:
+                el.text = renames[el.text.strip()]
         return self
 
 
@@ -217,7 +233,7 @@ def full_settings():
     d.set(vm, "mxl-src.audio.gate.enabled", True).set(vm, "mxl-src.audio.gate.thresholdDb", -50).set(vm, "mxl-src.audio.gate.holdMs", 20)
     d.set(vm, "mxl-src.audio.eq.mid.enabled", True).set(vm, "mxl-src.audio.eq.mid.gainDb", 3).set(vm, "mxl-src.audio.eq.mid.q", 1.2)
     d.set(vm, "mxl-src.audio.compressor.thresholdDb", -18).set(vm, "mxl-src.audio.compressor.ratio", 4)
-    d.set(vm, "engine.engine.colorProfile", "professional").set(vm, "engine.engine.frameSync", "source-driven")
+    d.set(vm, "engine.engine.colorProfile", "standard").set(vm, "engine.engine.frameSync", "source-driven")
     d.set(vm, "engine.engine.frameRateConversion", "blend")
     d.set(vm, "audio.master.limiter.thresholdDb", -6).set(vm, "audio.master.limiter.ceilingDb", -2)
     d.set(vm, "encoder.encoder.bitrateMbps", 8).set(vm, "encoder.encoder.gopSeconds", 4)

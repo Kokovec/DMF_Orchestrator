@@ -1,6 +1,6 @@
 Compiled examples/studio-a.workload.xml: studio-a revision 1, library 4.0.2, facility local
 allocation (new): uid/gid 20002, quicPort 8444, srtPort 6465
-hostname studio-a.dmf.test, MXL domain studio-a (657 MiB), quota cpu 4 memory 6Gi
+hostname studio-a.dmf.test, MXL domain studio-a (657 MiB), quota cpu 4 memory 7Gi
 wrote workloads/generated/studio-a.yaml
 wrote workloads/generated/studio-a.config.json
 wrote workloads/generated/studio-a.source.xml

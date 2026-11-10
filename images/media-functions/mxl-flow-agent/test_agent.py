@@ -92,5 +92,66 @@ class UnreachableRegistry(unittest.TestCase):
         self.assertTrue(r.node_ok)
 
 
+
+class Answering:
+    """A registry that gives one status for flows and 201 for everything else."""
+
+    def __init__(self, flow_status):
+        outer = self
+        self.flow_status = flow_status
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                status = outer.flow_status if b'"type": "flow"' in body else 201
+                self.send_response(status)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class RegistrationMetric(unittest.TestCase):
+    def test_a_rejected_flow_means_registration_is_down_until_it_succeeds(self):
+        reg = Answering(400)
+        self.addCleanup(reg.close)
+        r = registrar(reg.url)
+        r.heartbeat()
+        self.assertTrue(r.registration_up, "node and device registered, no flows yet")
+        flows = {"f1": {"label": "x"}}
+        r.sync(flows)
+        self.assertTrue(r.node_ok)
+        self.assertFalse(r.registration_up)
+        reg.flow_status = 201
+        r.sync(flows)
+        self.assertTrue(r.registration_up)
+
+    def test_a_flow_that_went_away_no_longer_counts(self):
+        reg = Answering(400)
+        self.addCleanup(reg.close)
+        r = registrar(reg.url)
+        r.heartbeat()
+        r.sync({"f1": {"label": "x"}})
+        self.assertFalse(r.registration_up)
+        r.sync({})
+        self.assertTrue(r.registration_up)
+
+    def test_a_rejected_node_means_registration_is_down(self):
+        s = Silent()
+        self.addCleanup(s.close)
+        r = registrar(s.url)
+        r.heartbeat()
+        self.assertFalse(r.registration_up)
+
+
 if __name__ == "__main__":
     unittest.main()

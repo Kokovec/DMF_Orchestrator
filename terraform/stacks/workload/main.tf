@@ -456,9 +456,10 @@ resource "helm_release" "mixer" {
     # Generated workloads only, so a hand-written one's values stay as they were. A for
     # expression, because a conditional can't return this object or {}: their types differ.
     [for g in(local.generated ? [true] : []) : {
-      persistence = { size = "${local.mixer.volumes.stateGi}Gi" }
-      cache       = { size = "${local.mixer.volumes.cacheGi}Gi" }
-      recordings  = { size = can(local.mixer.volumes.recordingsGi) ? "${local.mixer.volumes.recordingsGi}Gi" : "" }
+      persistence     = { size = "${local.mixer.volumes.stateGi}Gi" }
+      cache           = { size = "${local.mixer.volumes.cacheGi}Gi" }
+      recordings      = { size = can(local.mixer.volumes.recordingsGi) ? "${local.mixer.volumes.recordingsGi}Gi" : "" }
+      replayTmpfsSize = try(local.mixer.volumes.replayTmpfsMi, 0) > 0 ? "${local.mixer.volumes.replayTmpfsMi}Mi" : ""
     }]...
 
   ))]

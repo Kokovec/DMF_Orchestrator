@@ -4,11 +4,11 @@ kind: MediaWorkload
 metadata:
   name: full-settings
   description: 'Two-camera studio with an A/V sync source: the news-studio design, expressed as a published workload.'
-  uid: 9dd110d0-8c14-5c77-acf6-3eb708bf0c13
+  uid: 5fc0d767-c67e-5091-b502-b95e1269fe8c
   revision: 1
   libraryVersion: 4.0.2
 spec:
-  resourceProfile: {cpu: '4', memory: 6Gi, gpu: 0}
+  resourceProfile: {cpu: '4', memory: 8Gi, gpu: 0}
   mediaExchange: {domain: full-settings, uid: 20002, gid: 20002, sizeMiB: 657}
   access:
     hostname: full-settings.dmf.test
@@ -25,7 +25,7 @@ spec:
       pattern: smpte
       overlayText: Camera 1
       format: 1080p29.97
-      flows: {video: 817de3a0-f16a-5268-9d73-6b157c4b3611, audio: 0df91bf2-acf0-536c-9baa-33391e24529a}
+      flows: {video: 58c19f70-a603-58e5-baed-a174f8b94944, audio: ab0a33db-4f90-548a-ae03-a25168125d07}
       resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: '1', memory: 1Gi}}
     - name: cam2
       kind: mxl-testsrc
@@ -33,13 +33,13 @@ spec:
       pattern: ball
       overlayText: Camera 2
       format: 1080p29.97
-      flows: {video: 2d0d6a28-4be2-5019-815b-e137d99e7cb9, audio: 4657deb1-15c6-50b3-a3f6-d362c5df1d51}
+      flows: {video: 53e127e6-3a21-5bff-bdb6-edaef1735cd7, audio: 811c846b-424f-5609-9663-faa5c1e2f818}
       resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: '1', memory: 1Gi}}
     - name: sync
       kind: mxl-syncsrc
       label: Sync test
       format: 1080p29.97
-      flows: {video: f0f87544-fcf8-5cc1-9852-f601025609bc, audio: 778c3ad8-a7ad-526c-be61-9b18ed1c5461}
+      flows: {video: ec40ed5a-c5f6-573a-bce7-bcc5a2755a1f, audio: 06bdfe8b-ce79-551c-8924-cb989ebd79c0}
       resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: '1', memory: 1Gi}}
     - name: vision-mixer
       kind: switchframe
@@ -47,14 +47,14 @@ spec:
       format: 1080p29.97
       sources: [cam1, cam2, sync]
       mxlSources:
-        - {video: 817de3a0-f16a-5268-9d73-6b157c4b3611, audio: 0df91bf2-acf0-536c-9baa-33391e24529a}
-        - {video: 2d0d6a28-4be2-5019-815b-e137d99e7cb9, audio: 4657deb1-15c6-50b3-a3f6-d362c5df1d51}
-        - {video: f0f87544-fcf8-5cc1-9852-f601025609bc, audio: 778c3ad8-a7ad-526c-be61-9b18ed1c5461}
+        - {video: 58c19f70-a603-58e5-baed-a174f8b94944, audio: ab0a33db-4f90-548a-ae03-a25168125d07}
+        - {video: 53e127e6-3a21-5bff-bdb6-edaef1735cd7, audio: 811c846b-424f-5609-9663-faa5c1e2f818}
+        - {video: ec40ed5a-c5f6-573a-bce7-bcc5a2755a1f, audio: 06bdfe8b-ce79-551c-8924-cb989ebd79c0}
       programOutput: true
-      flows: {video: 7bc1d998-ac05-5b73-bed3-f61352d6515e, audio: 8c7f32aa-4a6d-579c-b797-44644d02e862}
-      programSource: mxl:817de3a0-f16a-5268-9d73-6b157c4b3611
-      resources: {requests: {cpu: '2', memory: 4Gi}, limits: {cpu: '6', memory: 8Gi}}
+      flows: {video: 81fd07ed-1baa-54d8-b257-14ce08c8a5c7, audio: 19e6faad-ac99-504e-9a8b-e985c5e59898}
+      programSource: mxl:58c19f70-a603-58e5-baed-a174f8b94944
+      resources: {requests: {cpu: '2', memory: 5360Mi}, limits: {cpu: '6', memory: 9456Mi}}
       goMemLimit: 6GiB
-      volumes: {stateGi: 21, cacheGi: 68, recordingsGi: 100}
+      volumes: {stateGi: 71, cacheGi: 18, replayTmpfsMi: 1264, recordingsGi: 100}
       configFile: full-settings.config.json
-      extraArgs: [--color-format=professional, --low-latency-sync, --frc-quality=blend, --srt-latency=200, --output-bitrate=8000000, --output-gop-secs=4, --output-preset=quality, --output-timecode, --replay-buffer-secs=120, --clip-storage-max=21474836480, --clip-ephemeral-ttl=48h, --captions, --scte35, --scte35-pid=500, --scte35-preroll=2000, --scte35-heartbeat=0, --scte35-verify=false, '--scte35-webhook=http://hooks.example/scte', --playout, --playout-cache-max=50, --playout-asrun-retention=7, --preview-proxy, --preview-resolution=720p, --preview-bitrate=1000000, --relay-resolution=480p, --relay-bitrate=1500000, --log-level, debug]
+      extraArgs: [--low-latency-sync, --frc-quality=blend, --srt-latency=200, --output-bitrate=8000000, --output-gop-secs=4, --output-preset=quality, --output-timecode, --replay-buffer-secs=120, --clip-storage-max=21474836480, --clip-ephemeral-ttl=48h, --captions, --scte35, --scte35-pid=500, --scte35-preroll=2000, --scte35-heartbeat=0, --scte35-verify=false, '--scte35-webhook=http://hooks.example/scte', --playout, --playout-cache-max=50, --playout-asrun-retention=7, --preview-proxy, --preview-resolution=720p, --preview-bitrate=1000000, --relay-resolution=480p, --relay-bitrate=1500000, --log-level, debug]

@@ -15,6 +15,34 @@ class Rules(RepoTest):
                         + "\n".join(map(str, problems)))
         return problems
 
+    # Rules 9 and 10 ------------------------------------------------------------------------
+    def test_rule9_rtmp_with_an_hevc_profile(self):
+        for profile in ("standard-hevc", "professional"):
+            d = Doc().use(VM, "outputs", "rtmp-out", 1)
+            d.set(VM, "rtmp-out.rtmp.url", "rtmp://live.example.com/app")
+            d.set(VM, "engine.engine.colorProfile", profile)
+            self.assertRefused(d, 9, f"{VM}: rtmp-out, engine.engine.colorProfile",
+                               f"rtmp-out can't run with colour profile {profile!r}")
+
+    def test_rule9_allows_hevc_without_rtmp_and_rtmp_with_standard(self):
+        self.assertEqual(self.repo.compile(Doc().set(VM, "engine.engine.colorProfile", "professional").bytes()).workload_id, "studio-a")
+        d = Doc().use(VM, "outputs", "rtmp-out", 1).set(VM, "rtmp-out.rtmp.url", "rtmp://live.example.com/app")
+        self.assertEqual(self.repo.compile(d.bytes()).workload_id, "studio-a")
+
+    def test_rule10_uid_and_flow_ids_of_another_workload(self):
+        self.repo.compile_and_write(Doc().bytes())
+        d = Doc()
+        d.root.set("id", "studio-b")     # the same uid and flow IDs, under another id
+        problems = self.assertRefused(d, 10, "workload: uid 9dd110d0-8c14-5c77-acf6-3eb708bf0c13",
+                                      "already used by workload studio-a")
+        self.assertRefused(d, 10, "workload: flow ID 817de3a0-f16a-5268-9d73-6b157c4b3611", "already used by workload studio-a")
+        self.assertEqual(sum(p.rule == 10 for p in problems), 9)    # the uid and 8 flows
+
+    def test_rule10_own_identity_and_new_identity_pass(self):
+        self.repo.compile_and_write(Doc().bytes())
+        self.repo.compile_and_write(Doc().bytes())                      # re-import keeps its own
+        self.repo.compile_and_write(Doc().rename("studio-b").bytes())   # derived, so its own
+
     # Rule 1 --------------------------------------------------------------------------------
     def test_rule1_api_version(self):
         d = Doc()
@@ -183,6 +211,24 @@ class Rules(RepoTest):
         for where in ("mxl-src.source.label", "recording.recording.rotateAfterMinutes", "scte35.scte35.defaultRule",
                       "mxl-src.key.fillSource", "srt-src.srt.streamId", "srt-src.srt.address"):
             self.assertIn(f"{VM}: {where}", got, "\n".join(map(str, problems)))
+
+    def test_rule8_audio_ranges_are_the_mixers(self):
+        # The API's own check is wider than the mixer's: between the two, the API accepts the
+        # request and the mixer refuses it (server/audio/eq.go, server/audio/mixer.go).
+        for path, value in (("mxl-src.audio.eq.mid.gainDb", 13), ("mxl-src.audio.eq.low.gainDb", -13),
+                            ("mxl-src.audio.eq.high.q", 4.5), ("mxl-src.audio.eq.mid.q", 0.4),
+                            ("mxl-src.audio.eq.low.frequencyHz", 79), ("mxl-src.audio.eq.mid.frequencyHz", 8001),
+                            ("mxl-src.audio.eq.high.frequencyHz", 999),
+                            ("audio.master.limiter.thresholdDb", -13), ("audio.master.limiter.ceilingDb", -4)):
+            with self.subTest(path):
+                d = Doc().set(VM, path, value)
+                self.assertIn(f"{VM}: {path}", {p.where for p in self.repo.problems(d.bytes()) if p.rule == 8})
+        d = Doc()
+        for path, value in (("mxl-src.audio.eq.mid.gainDb", 12), ("mxl-src.audio.eq.mid.q", 4), ("mxl-src.audio.eq.low.q", 0.5),
+                            ("mxl-src.audio.eq.low.frequencyHz", 80), ("mxl-src.audio.eq.high.frequencyHz", 16000),
+                            ("audio.master.limiter.thresholdDb", -12), ("audio.master.limiter.ceilingDb", -3)):
+            d.set(VM, path, value)
+        self.repo.compile(d.bytes())
 
     def test_rule8_stream_id_is_unique_across_srt_inputs(self):
         # Listeners and callers share srt:<streamID> keys, so a mixed pair collides too.

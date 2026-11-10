@@ -98,7 +98,9 @@ spec:
             - {{ printf "--format=%s" .Values.switchframe.format | quote }}
             - {{ printf "--log-level=%s" .Values.switchframe.logLevel | quote }}
             - "--cache-dir=/cache"
+            {{- if .Values.replayTmpfsSize }}
             - "--replay-tmpfs-dir=/replay"
+            {{- end }}
             - {{ printf "--mxl-domain=%s" $domain | quote }}
             {{- with include "switchframe.mxlSources" . }}
             - {{ printf "--mxl-sources=%s" . | quote }}
@@ -160,7 +162,9 @@ spec:
             - {name: flows, mountPath: /etc/switchframe/flows, readOnly: true}
             - {name: state, mountPath: /var/lib/switchframe}
             - {name: cache, mountPath: /cache}
+            {{- if .Values.replayTmpfsSize }}
             - {name: replay, mountPath: /replay}
+            {{- end }}
             - {name: tmp, mountPath: /tmp}
             {{- if .Values.recordings.size }}
             - {name: recordings, mountPath: /recordings}
@@ -216,10 +220,12 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if .Values.replayTmpfsSize }}
         - name: replay
           emptyDir:
             medium: Memory
             sizeLimit: {{ .Values.replayTmpfsSize }}
+        {{- end }}
         - name: tmp
           emptyDir: {}
         {{- if .Values.recordings.size }}

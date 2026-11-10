@@ -40,9 +40,22 @@ class Sizing(unittest.TestCase):
 
     def test_switchframe_resources(self):
         self.assertEqual(sizing.switchframe_resources(2, 4096), (
-            {"requests": {"cpu": "2", "memory": "4Gi"}, "limits": {"cpu": "6", "memory": "8Gi"}}, "6GiB"))
+            {"requests": {"cpu": "2", "memory": "4Gi"}, "limits": {"cpu": "6", "memory": "8Gi"}}, "6GiB", Fraction(4096)))
         self.assertEqual(sizing.switchframe_resources(2.5, 3000), (
-            {"requests": {"cpu": "2500m", "memory": "3000Mi"}, "limits": {"cpu": "7500m", "memory": "6000Mi"}}, "4500MiB"))
+            {"requests": {"cpu": "2500m", "memory": "3000Mi"}, "limits": {"cpu": "7500m", "memory": "6000Mi"}}, "4500MiB", Fraction(3000)))
+
+    def test_replay_tmpfs_adds_to_request_and_limit_but_not_gomemlimit(self):
+        res, gml, request = sizing.switchframe_resources(2, 4096, 664)
+        self.assertEqual(res, {"requests": {"cpu": "2", "memory": "4760Mi"}, "limits": {"cpu": "6", "memory": "8856Mi"}})
+        self.assertEqual(gml, "6GiB")
+        self.assertEqual(request, Fraction(4760))
+
+    def test_replay_tmpfs_mib(self):
+        self.assertEqual(sizing.replay_tmpfs_mib(3), 3 * 200 + 64)
+        self.assertEqual(sizing.replay_tmpfs_mib(8), 8 * 200 + 64)
+        self.assertEqual(sizing.replay_tmpfs_mib(12), 8 * 200 + 64)     # replay buffers 8 sources at most
+        self.assertEqual(sizing.replay_tmpfs_mib(3, replay_on=False), 0)
+        self.assertEqual(sizing.replay_tmpfs_mib(0), 0)
 
     def test_test_source_resources(self):
         self.assertEqual(sizing.test_source_resources(0.25, 256),
@@ -57,12 +70,14 @@ class Sizing(unittest.TestCase):
         self.assertEqual(sizing.quota(pods), {"cpu": "4", "memory": "6Gi", "gpu": 0})
 
     def test_volumes(self):
-        # /cache: ST map prewarm (15.64 GiB at 1080p -> 16) + 2, plus the playout cache when on.
-        self.assertEqual(sizing.volumes(1920, 1080, 10), {"stateGi": 11, "cacheGi": 18})
-        self.assertEqual(sizing.volumes(1920, 1080, 2), {"stateGi": 5, "cacheGi": 18})
-        self.assertEqual(sizing.volumes(1920, 1080, None), {"stateGi": 11, "cacheGi": 18})
-        self.assertEqual(sizing.volumes(1920, 1080, 10, True, 50, 100), {"stateGi": 11, "cacheGi": 68, "recordingsGi": 100})
-        self.assertEqual(sizing.volumes(1920, 1080, 10, True), {"stateGi": 11, "cacheGi": 218})
+        # /cache: ST map prewarm (15.64 GiB at 1080p -> 16) + 2. State: clips + 1, plus the playout
+        # cache when on: SwitchFrame keeps it in <state dir>/playout-cache, not under /cache.
+        self.assertEqual(sizing.volumes(1920, 1080, 10), {"stateGi": 11, "cacheGi": 18, "replayTmpfsMi": 0})
+        self.assertEqual(sizing.volumes(1920, 1080, 2), {"stateGi": 5, "cacheGi": 18, "replayTmpfsMi": 0})
+        self.assertEqual(sizing.volumes(1920, 1080, None), {"stateGi": 11, "cacheGi": 18, "replayTmpfsMi": 0})
+        self.assertEqual(sizing.volumes(1920, 1080, 10, True, 50, 100, 664),
+                         {"stateGi": 61, "cacheGi": 18, "replayTmpfsMi": 664, "recordingsGi": 100})
+        self.assertEqual(sizing.volumes(1920, 1080, 10, True), {"stateGi": 211, "cacheGi": 18, "replayTmpfsMi": 0})
         self.assertEqual(sizing.volumes(1280, 720)["cacheGi"], 9)       # 6.95 GiB
         self.assertEqual(sizing.volumes(3840, 2160)["cacheGi"], 65)     # 62.6 GiB
 
@@ -70,7 +85,8 @@ class Sizing(unittest.TestCase):
 class CompiledSizes(RepoTest):
     def test_studio_a(self):
         r = self.repo.compile(Doc().bytes())
-        self.assertEqual(r.doc["spec"]["resourceProfile"], {"cpu": "4", "memory": "6Gi", "gpu": 0})
+        # Three sources: 664 MiB of replay tmpfs joins the mixer's request, so 5680 MiB -> x1.2 -> 7 GiB.
+        self.assertEqual(r.doc["spec"]["resourceProfile"], {"cpu": "4", "memory": "7Gi", "gpu": 0})
         self.assertEqual(r.doc["spec"]["mediaExchange"]["sizeMiB"], 657)
 
     def test_2160p_workload(self):

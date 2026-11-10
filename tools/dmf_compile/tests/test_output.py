@@ -188,6 +188,7 @@ class Consumers(RepoTest):
                             "goMemLimit": mixer["goMemLimit"]},
             "persistence": {"size": f"{mixer['volumes']['stateGi']}Gi"},
             "recordings": {"size": f"{mixer['volumes']['recordingsGi']}Gi" if "recordingsGi" in mixer["volumes"] else ""},
+            "replayTmpfsSize": f"{mixer['volumes']['replayTmpfsMi']}Mi" if mixer["volumes"]["replayTmpfsMi"] else "",
             "ingress": {"hostname": wl["spec"]["access"]["hostname"]},
             "sso": {"issuerUrl": "https://keycloak.dmf.test/realms/dmf", "internalUrl": "http://keycloak:8080/realms/dmf",
                     "existingSecret": "sso-gateway"},
@@ -268,9 +269,21 @@ class Consumers(RepoTest):
         cache = next(v for v in dep["spec"]["template"]["spec"]["volumes"] if v["name"] == "cache")
         self.assertEqual(cache, {"name": "cache", "persistentVolumeClaim": {"claimName": "t-cache"}})
         pvcs = {d["metadata"]["name"]: d["spec"]["resources"]["requests"]["storage"] for d in docs if d["kind"] == "PersistentVolumeClaim"}
-        self.assertEqual(pvcs, {"t-state": "21Gi", "t-cache": "68Gi", "t-recordings": "100Gi"})
+        self.assertEqual(pvcs, {"t-state": "71Gi", "t-cache": "18Gi", "t-recordings": "100Gi"})
+        replay = next(v for v in dep["spec"]["template"]["spec"]["volumes"] if v["name"] == "replay")
+        self.assertEqual(replay, {"name": "replay", "emptyDir": {"medium": "Memory",
+                                                                 "sizeLimit": f"{mixer['volumes']['replayTmpfsMi']}Mi"}})
         cm = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"].endswith("-config"))
         self.assertEqual(json.loads(cm["data"]["config.json"]), values["config"])
+
+    def test_helm_template_replay_off_has_no_tmpfs(self):
+        _, _, values = self.mixer_values("studio-a")
+        values["replayTmpfsSize"] = ""
+        docs = [d for d in yaml.safe_load_all(self.helm("switchframe", values)) if d]
+        sf = next(d for d in docs if d["kind"] == "Deployment")["spec"]["template"]["spec"]
+        self.assertNotIn("replay", [v["name"] for v in sf["volumes"]])
+        self.assertNotIn("--replay-tmpfs-dir=/replay", sf["containers"][0]["args"])
+        self.assertNotIn("/replay", [m["mountPath"] for m in sf["containers"][0]["volumeMounts"]])
 
     def test_helm_template_without_cache_size_keeps_the_emptydir(self):
         _, _, values = self.mixer_values("studio-a")

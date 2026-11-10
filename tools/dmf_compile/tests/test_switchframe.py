@@ -118,7 +118,7 @@ class Flags(RepoTest):
 
     def test_full_settings_args(self):
         self.assertEqual(self.args(full_settings(), FULL_SETTINGS_SECRETS), [
-            "--color-format=professional", "--low-latency-sync", "--frc-quality=blend", "--srt-latency=200",
+            "--low-latency-sync", "--frc-quality=blend", "--srt-latency=200",
             "--output-bitrate=8000000", "--output-gop-secs=4", "--output-preset=quality", "--output-timecode",
             "--replay-buffer-secs=120", "--clip-storage-max=21474836480", "--clip-ephemeral-ttl=48h",
             "--captions", "--scte35", "--scte35-pid=500", "--scte35-preroll=2000", "--scte35-heartbeat=0",
@@ -136,6 +136,20 @@ class Flags(RepoTest):
             d.feature(VM, f, False)
         args = self.args(d, FULL_SETTINGS_SECRETS)
         self.assertFalse([a for a in args if a.startswith(("--captions", "--scte35", "--playout"))], args)
+
+    def test_replay_off_means_no_shutter_call_and_no_tmpfs(self):
+        d = full_settings().feature(VM, "replay", False)
+        self.repo.secrets("full-settings", FULL_SETTINGS_SECRETS)
+        r = self.repo.compile(d.bytes())
+        self.assertNotIn("/api/replay/shutter-angle", [c["path"] for c in r.config["global"]])
+        mixer = r.doc["spec"]["functions"][-1]
+        self.assertEqual(mixer["volumes"]["replayTmpfsMi"], 0)
+        self.assertEqual(mixer["resources"]["requests"]["memory"], "4Gi")
+
+    def test_replay_tmpfs_counts_every_input(self):
+        self.repo.secrets("full-settings", FULL_SETTINGS_SECRETS)
+        r = self.repo.compile(full_settings().bytes())     # 3 MXL + 3 SRT inputs
+        self.assertEqual(r.doc["spec"]["functions"][-1]["volumes"]["replayTmpfsMi"], 6 * 200 + 64)
 
     def test_unset_values_give_no_flag(self):
         d = Doc()
@@ -200,7 +214,7 @@ class Bodies(RepoTest):
              "secretUrlSuffix": "yt-key"}])
         self.assertEqual(cfg["recording"], {"method": "POST", "path": "/api/recording/start", "body": {
             "outputDir": "/recordings", "rotateAfterMins": 30, "maxFileSizeMB": 2000, "filenamePrefix": "studio"}})
-        self.assertEqual(cfg["program"], {"input": "mxl-src", "ref": {"kind": "mxl", "key": "mxl:817de3a0-f16a-5268-9d73-6b157c4b3611"}})
+        self.assertEqual(cfg["program"], {"input": "mxl-src", "ref": {"kind": "mxl", "key": "mxl:58c19f70-a603-58e5-baed-a174f8b94944"}})
 
     def test_no_secret_value_in_the_config(self):
         self.repo.secrets("full-settings", FULL_SETTINGS_SECRETS)

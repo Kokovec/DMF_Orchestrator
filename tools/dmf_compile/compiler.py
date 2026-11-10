@@ -120,6 +120,12 @@ def compile_document(doc, repo, facility, source_name, source_bytes):
     used = [s for c in compiled.values() for s in c.secrets]
     check_secrets(repo, wid, used, report)
 
+    # Rule 10: two running workloads with the same flow IDs conflict in NMOS.
+    flow_ids = [f["id"] for f in spec["flows"]]
+    for what, value, other in allocate.identity_clashes(repo, wid, meta["uid"], flow_ids):
+        report.refuse(10, f"workload: {what} {value}", f"is already used by workload {other} (.state/allocations.json); "
+                                                       "each workload needs its own uid and flow IDs")
+
     alloc, is_new = None, None
     try:
         alloc, is_new = allocate.allocate(repo, facility, wid)
@@ -164,14 +170,14 @@ def compile_document(doc, repo, facility, source_name, source_bytes):
     report.raise_if_any()
     return Result(workload_id=wid, revision=meta["revision"], library=meta["libraryVersion"], warnings=report.warnings,
                   allocation=alloc, new_allocation=is_new, hostname=out["spec"]["access"]["hostname"],
-                  size_mib=size_mib, profile=profile, doc=out, config=mixer.config,
+                  size_mib=size_mib, profile=profile, doc=out, config=mixer.config, flow_ids=flow_ids,
                   yaml_text=yaml_text, config_text=emit.render_json(mixer.config),
                   source_bytes=source_bytes)
 
 
 def write(repo, result):
     """Saves the allocation, then the files."""
-    allocate.save(repo, result.workload_id, result.allocation)
+    allocate.save(repo, result.workload_id, result.allocation, result.doc["metadata"]["uid"], result.flow_ids)
     return emit.write(repo, result.workload_id, result.yaml_text, result.config_text, result.source_bytes)
 
 

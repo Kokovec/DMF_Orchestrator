@@ -81,9 +81,23 @@ def allocate(repo, facility, workload_id):
     return dict(alloc, gid=alloc["uid"]), True
 
 
-def save(repo, workload_id, alloc):
+def identity_clashes(repo, workload_id, workload_uid, flow_ids):
+    """Rule 10: [(what, value, other workload)] for a uid or flow ID another allocation records."""
+    clashes = []
+    for other, alloc in sorted(load(repo).items()):
+        if other == workload_id:
+            continue
+        if alloc.get("workloadUid") == workload_uid:
+            clashes.append(("uid", workload_uid, other))
+        clashes.extend(("flow ID", f, other) for f in flow_ids if f in set(alloc.get("flowIds", ())))
+    return clashes
+
+
+def save(repo, workload_id, alloc, workload_uid=None, flow_ids=()):
     allocations = load(repo)
     allocations[workload_id] = {f: alloc[f] for f in FIELDS}
+    if workload_uid:
+        allocations[workload_id].update(workloadUid=workload_uid, flowIds=sorted(flow_ids))
     _write(repo, allocations)
 
 

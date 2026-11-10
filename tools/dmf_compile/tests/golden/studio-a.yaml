@@ -8,7 +8,7 @@ metadata:
   revision: 1
   libraryVersion: 4.0.2
 spec:
-  resourceProfile: {cpu: '4', memory: 6Gi, gpu: 0}
+  resourceProfile: {cpu: '4', memory: 7Gi, gpu: 0}
   mediaExchange: {domain: studio-a, uid: 20002, gid: 20002, sizeMiB: 657}
   access:
     hostname: studio-a.dmf.test
@@ -53,8 +53,8 @@ spec:
       programOutput: true
       flows: {video: 7bc1d998-ac05-5b73-bed3-f61352d6515e, audio: 8c7f32aa-4a6d-579c-b797-44644d02e862}
       programSource: mxl:817de3a0-f16a-5268-9d73-6b157c4b3611
-      resources: {requests: {cpu: '2', memory: 4Gi}, limits: {cpu: '6', memory: 8Gi}}
+      resources: {requests: {cpu: '2', memory: 4760Mi}, limits: {cpu: '6', memory: 8856Mi}}
       goMemLimit: 6GiB
-      volumes: {stateGi: 11, cacheGi: 18}
+      volumes: {stateGi: 11, cacheGi: 18, replayTmpfsMi: 664}
       configFile: studio-a.config.json
       extraArgs: [--preview-proxy]

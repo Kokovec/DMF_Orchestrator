@@ -15,6 +15,7 @@ from .common import FORMATS, MISSING, RATES, Compiled, copies, format_name, fram
 TYPES = {"switchframe.1": {"1.1.0"}}
 
 INPUTS = {"srt-src": "srt-in", "moq-src": "moq", "mxl-src": "mxl", "st2110-src": "st2110"}
+HEVC_PROFILES = ("standard-hevc", "professional")
 OUTPUTS = {"srt-out": None, "rtmp-out": "rtmp-out", "mxl-out": "mxl", "st2110-out": "st2110"}  # srt-out: by mode
 FEATURES = {"captions": False, "captions.asr": False, "scte35": False, "scte35.scte104": False,
             "replay": True, "playout": False, "ai-segment": False, "recording": False}
@@ -49,6 +50,13 @@ GATE_DEFAULTS = {"thresholdDb": -40, "rangeDb": -40, "attackMs": 5, "releaseMs":
 EQ_DEFAULTS = {"low": {"frequencyHz": 100, "gainDb": 0, "q": 0.7}, "mid": {"frequencyHz": 1000, "gainDb": 0, "q": 0.7},
                "high": {"frequencyHz": 8000, "gainDb": 0, "q": 0.7}}
 EQ_BANDS = {"low": 0, "mid": 1, "high": 2}                  # docs/reference/api/audio.md
+# server/audio/eq.go, tighter than the API's own check (server/control/validate.go), which only
+# bounds what reaches the mixer: a value between the two is accepted by the API and refused by it.
+EQ_FREQUENCY = {"low": (80, 1000), "mid": (200, 8000), "high": (1000, 16000)}
+EQ_GAIN = (-12, 12)
+EQ_Q = (0.5, 4)
+LIMITER_THRESHOLD = (-12, 0)                                # server/audio/mixer.go SetLimiterThreshold
+LIMITER_CEILING = (-3, 0)                                   # server/audio/mixer.go SetLimiterCeiling
 COMPRESSOR_DEFAULTS = {"thresholdDb": 0, "ratio": 1, "attackMs": 5, "releaseMs": 100, "makeupGainDb": 0}
 CHROMA_DEFAULTS = {"keyColorY": 145, "keyColorCb": 54, "keyColorCr": 34, "similarity": 0.4, "smoothness": 0.1, "spillSuppress": 0.5}
 LUMA_DEFAULTS = {"lowClip": 0, "highClip": 1, "softness": 0.1}
@@ -132,13 +140,14 @@ class _Mixer:
         self.features_flags()
         self.control()
         self.settings_args()
-        resources, go_mem_limit, requests = self.resources()
+        replay_tmpfs = sizing.replay_tmpfs_mib(len(self.inputs), self.on("replay"))
+        resources, go_mem_limit, requests = self.resources(replay_tmpfs)
 
         clips_gb = self.number("clips.clips.storageMaxGB", None, 1, 10000, integer=True)
         cache_gb = self.number("playout.playout.cacheMaxGB", None, 1, 10000, integer=True) if self.on("playout") else None
         width, height = self.size or (1920, 1080)
         volumes = sizing.volumes(width, height, None if clips_gb is MISSING else clips_gb, self.on("playout"),
-                                 None if cache_gb is MISSING else cache_gb, recordings_gib)
+                                 None if cache_gb is MISSING else cache_gb, recordings_gib, replay_tmpfs)
 
         entry = {"name": self.fid, "kind": "switchframe", "label": self.fn["name"], "format": self.format,
                  "sources": source_functions, "mxlSources": mxl_sources}
@@ -409,9 +418,9 @@ class _Mixer:
         for band, index in EQ_BANDS.items():
             eq = get(src, f"audio.eq.{band}")
             if isinstance(eq, dict) and eq:
-                e = lambda k, lo, hi: self.number(f"{copy}.audio.eq.{band}.{k}", EQ_DEFAULTS[band][k], lo, hi)
+                e = lambda k, r: self.number(f"{copy}.audio.eq.{band}.{k}", EQ_DEFAULTS[band][k], r[0], r[1])
                 calls.append({"method": "PUT", "path": "/api/audio/{key}/eq", "body": {
-                    "band": index, "frequency": e("frequencyHz", 20, 20000), "gain": e("gainDb", -20, 20), "q": e("q", 0.1, 20),
+                    "band": index, "frequency": e("frequencyHz", EQ_FREQUENCY[band]), "gain": e("gainDb", EQ_GAIN), "q": e("q", EQ_Q),
                     "enabled": self.flag_value(f"{copy}.audio.eq.{band}.enabled", False)}})
         comp = get(src, "audio.compressor")
         if isinstance(comp, dict) and comp:
@@ -542,7 +551,13 @@ class _Mixer:
             if fields:
                 entry["secretFields"] = fields
             out.append(entry)
+        profile = self.p("engine.engine.colorProfile", "standard")
         for copy in copies(self.fn.get("outputs"), "rtmp-out"):
+            if profile in HEVC_PROFILES:
+                self.refuse(9, f"{copy}, engine.engine.colorProfile",
+                            f"{copy} can't run with colour profile {profile!r}: the programme is HEVC and SwitchFrame "
+                            "can't transcode it for RTMP, so it would report active and send nothing. "
+                            "Use the 'standard' profile or remove the output")
             url = self.p(f"{copy}.rtmp.url", None)
             if not isinstance(url, str) or not re.match(r"^rtmps?://[^\s]+$", url):
                 self.refuse(8, f"{copy}.rtmp.url", f"{url!r} must start with rtmp:// or rtmps://" if url else "is required")
@@ -590,8 +605,8 @@ class _Mixer:
         lim = self.p("audio.master.limiter", MISSING)
         if isinstance(lim, dict) and lim:
             calls.append({"method": "PUT", "path": "/api/audio/limiter", "body": {
-                "threshold": self.number("audio.master.limiter.thresholdDb", LIMITER_DEFAULTS["thresholdDb"], -24, 0),
-                "ceiling": self.number("audio.master.limiter.ceilingDb", LIMITER_DEFAULTS["ceilingDb"], -12, 0)}})
+                "threshold": self.number("audio.master.limiter.thresholdDb", LIMITER_DEFAULTS["thresholdDb"], *LIMITER_THRESHOLD),
+                "ceiling": self.number("audio.master.limiter.ceilingDb", LIMITER_DEFAULTS["ceilingDb"], *LIMITER_CEILING)}})
         if self.on("captions"):
             mode = self.p("captions.captions.mode", "passthrough")
             if mode not in ("passthrough", "author"):
@@ -700,7 +715,7 @@ class _Mixer:
             self.warn("settings.extraArgs", f"appends {' '.join(extra)} to SwitchFrame's arguments, unchecked")
             self.args.extend(extra)
 
-    def resources(self):
+    def resources(self, replay_tmpfs=0):
         res = self.fn.get("resources") or {}
         cpu = res.get("cpu", 2)
         mem = res.get("memoryMiB", 4096)
@@ -712,5 +727,5 @@ class _Mixer:
             mem = 4096
         if res.get("gpu", {}).get("count", 0) > 0:
             self.need("gpu", "resources.gpu", f"{res['gpu']['count']} GPU ({res['gpu'].get('class')})")
-        resources, gml = sizing.switchframe_resources(cpu, mem)
-        return resources, gml, (Fraction(str(cpu)), Fraction(str(mem)))
+        resources, gml, request_mib = sizing.switchframe_resources(cpu, mem, replay_tmpfs)
+        return resources, gml, (Fraction(str(cpu)), request_mib)

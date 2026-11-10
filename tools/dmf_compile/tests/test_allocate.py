@@ -23,8 +23,11 @@ class Allocation(RepoTest):
         again = self.repo.compile_and_write(Doc().bytes())
         self.assertEqual(self.alloc(again), self.alloc(first))
         self.assertFalse(again.new_allocation)
-        self.assertEqual(json.loads((self.repo.path / ".state" / "allocations.json").read_text()),
-                         {"studio-a": {"uid": 20002, "quicPort": 8444, "srtPort": 6465}})
+        saved = json.loads((self.repo.path / ".state" / "allocations.json").read_text())
+        self.assertEqual(list(saved), ["studio-a"])
+        self.assertEqual({f: saved["studio-a"][f] for f in allocate.FIELDS}, {"uid": 20002, "quicPort": 8444, "srtPort": 6465})
+        self.assertEqual(saved["studio-a"]["workloadUid"], "9dd110d0-8c14-5c77-acf6-3eb708bf0c13")
+        self.assertEqual(len(saved["studio-a"]["flowIds"]), 8)
 
     def test_second_workload_gets_different_values(self):
         a = self.repo.compile_and_write(Doc().bytes())

@@ -124,6 +124,7 @@ class Registrar:
         self.device_id = derived_id("device", workload, domain)
         self.registered = {}  # flow id -> source id
         self.node_ok = False
+        self.rejected = set()  # resources whose last registration got anything but 2xx
         self.timeout = 5
 
     def _call(self, method: str, path: str, body=None) -> int:
@@ -145,7 +146,14 @@ class Registrar:
             return 0
 
     def _register(self, rtype: str, data: dict) -> bool:
-        return self._call("POST", "/resource", {"type": rtype, "data": data}) in (200, 201)
+        ok = 200 <= self._call("POST", "/resource", {"type": rtype, "data": data}) < 300
+        (self.rejected.discard if ok else self.rejected.add)((rtype, data["id"]))
+        return ok
+
+    @property
+    def registration_up(self) -> bool:
+        """True only while the node and every flow are registered: a 400 on a flow is a failure too."""
+        return self.node_ok and not self.rejected
 
     def _tags(self) -> dict:
         return {
@@ -183,6 +191,8 @@ class Registrar:
     def sync(self, flows: dict) -> None:
         if not self.node_ok:
             return
+        wanted = {("flow", f) for f in flows} | {("source", derived_id("source", f)) for f in flows}
+        self.rejected = {r for r in self.rejected if r[0] in ("node", "device") or r in wanted}
         for flow_id, fdef in flows.items():
             if flow_id in self.registered:
                 continue
@@ -225,7 +235,7 @@ class Metrics:
             "# HELP dmf_mxl_domain_flows Number of flows present in the MXL domain.",
             "# TYPE dmf_mxl_domain_flows gauge",
             f"dmf_mxl_domain_flows{{{lab}}} {len(statuses)}",
-            "# HELP dmf_nmos_registration_up 1 if the IS-04 node registration is healthy.",
+            "# HELP dmf_nmos_registration_up 1 if the IS-04 node and every flow are registered.",
             "# TYPE dmf_nmos_registration_up gauge",
             f"dmf_nmos_registration_up{{{lab}}} {registry_up}",
             "# HELP dmf_mxl_flow_info Static flow metadata.",
@@ -310,7 +320,7 @@ def main() -> int:
             if registrar:
                 registrar.heartbeat()
                 registrar.sync(flows)
-            metrics.render(workload, domain_name, statuses, int(bool(registrar and registrar.node_ok)))
+            metrics.render(workload, domain_name, statuses, int(bool(registrar and registrar.registration_up)))
             time.sleep(poll)
     except KeyboardInterrupt:
         pass
