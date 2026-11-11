@@ -76,6 +76,15 @@
         state: directory
         mode: "0700"
 
+    # Only Deployments that already existed can have started before their Flow Domain. On a first
+    # provision the domain is new (so "remounted"), but Terraform creates the Deployments after it:
+    # restarting them then started every function twice (stage 7B).
+    - name: List Media Functions that exist before this apply
+      ansible.builtin.command: "{{ kubectl }} get deploy -l dmf.ebu.ch/workload={{ workload }} -o name"
+      register: deployments_before
+      changed_when: false
+      failed_when: false
+
     - name: Terraform apply in workspace {{ workload }}
       community.general.terraform:
         project_path: "{{ dmf_terraform_dir }}/workload"
@@ -94,6 +103,7 @@
     - name: Restart Media Functions that started before their Flow Domain existed
       when: >-
         (groups['dmf_cluster'] | map('extract', hostvars, 'mxl_domain_remounted') | select('equalto', true) | list | length) > 0
+        and (deployments_before.stdout | default('') | trim | length) > 0
       ansible.builtin.command: "{{ kubectl }} rollout restart deploy -l dmf.ebu.ch/workload={{ workload }}"
       register: restarted
       changed_when: restarted.rc == 0

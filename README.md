@@ -1,6 +1,6 @@
 # SwitchFrame on a local EBU DMF facility
 
-A deployment package that runs [SwitchFrame](https://github.com/thiagopnts/switchframe) as a Media Function in a local facility aligned with the **EBU Dynamic Media Facility Reference Architecture v2.0** ([white paper, 2026-04-15](https://tech.ebu.ch/publications/white-paper-2026-04-15)). It is provisioned with Terraform and configured with Ansible.
+A deployment package that runs [SwitchFrame](https://github.com/mattlamb99/switchframe) as a Media Function in a local facility aligned with the **EBU Dynamic Media Facility Reference Architecture v2.0** ([white paper, 2026-04-15](https://tech.ebu.ch/publications/white-paper-2026-04-15)). It is provisioned with Terraform and configured with Ansible.
 
 - **Media Exchange:** MXL SDK v1.1.0 shared memory, one isolated Flow Domain per production. Flows are registered in an NMOS IS-04 registry.
 - **Media Functions:** containerised SwitchFrame vision mixer and MXL camera sources, packaged as Helm charts.
@@ -113,7 +113,7 @@ Keep it a name you control or a reserved one such as `.test`. Ansible maps the h
 
 A production is one file in `workloads/`. The included `news-studio` has two test cameras, an A/V sync test source and a SwitchFrame vision mixer.
 
-A workload designed in DMF Toolkit arrives as published XML instead: `make deploy XML=<file or http://localhost url>` compiles it into `workloads/generated/<id>.yaml` (git-ignored) and provisions it; `make import XML=...` only compiles. See [docs/orchestration/](docs/orchestration/).
+A workload designed in DMF Toolkit arrives as published XML instead. See [Deploying from DMF Toolkit](#deploying-from-dmf-toolkit).
 
 ```bash
 make plan      WORKLOAD=news-studio   # check the design and capacity, show what will change
@@ -223,11 +223,65 @@ A production is one file in `workloads/`. Copy [workloads/news-studio.yaml](work
 
 Several workloads can run side by side. They are isolated by namespace, network policy, Flow Domain ownership and the admission policy.
 
+## Deploying from DMF Toolkit
+
+[DMF Toolkit](docs/orchestration/) is the design tool: you draw the workload there, and this repo compiles what it publishes and runs it. The handover is XML, validated against [schemas/dmf-workload-v1.xsd](schemas/dmf-workload-v1.xsd).
+
+**1. Tell the toolkit what this facility can run.** Export the facility profile, then start the toolkit's API with it, so options the facility can't honour are greyed out with a reason:
+
+```bash
+make facility-export                       # writes .state/facility-local.json
+# in the toolkit's checkout:
+DMF_FACILITY=<path to .state/facility-local.json> npm run server
+```
+
+Without `DMF_FACILITY` the toolkit offers everything, and the compiler refuses what doesn't fit at import instead.
+
+**2. Design and publish.** Save the workload in the toolkit. Every save is a new revision. The orchestrator reads the latest publishable one from `http://localhost:3001/api/workloads/<id>/published.xml`; the toolkit answers 422 with the reasons when a revision isn't publishable.
+
+**3. Set the secrets it names.** SRT passphrases and RTMP stream keys are references in the XML, never values. Set each value once; it is prompted without echo and kept in `.state/secrets/<id>.yaml` (mode 600):
+
+```bash
+make import XML=http://localhost:3001/api/workloads/<id>/published.xml   # compile only: lists missing secrets
+make secret-set WORKLOAD=<id> NAME=<secret name>
+```
+
+`make import` also prints the allocation: UID, QUIC port, SRT port and hostname. An SRT listener source is reached at `srt://<host>:<srtPort>?streamid=<its stream ID>`.
+
+**4. Deploy.**
+
+```bash
+make deploy XML=http://localhost:3001/api/workloads/<id>/published.xml   # import, plan, provision (sudo)
+make start WORKLOAD=<id>                                                 # on WSL, after a restart
+```
+
+The compiler refuses a design the facility can't run before anything changes: an option without its capability (ST 2110, MoQ, SRT listener output and the rest in [02-switchframe-options.md](docs/orchestration/02-switchframe-options.md)), a missing secret, a format the product doesn't have, or a uid or flow ID another workload uses. It names each option and reports every problem at once.
+
+**5. Change it.** Save a new revision in the toolkit and run the same `make deploy`. Flow IDs stay the same across revisions. What restarts depends on what changed:
+
+| Change | Effect |
+|---|---|
+| Source labels, positions, audio settings, keys, limiter, replay shutter angle, destinations, recording settings | Nothing restarts. The reconciler picks up the new config within about two minutes (the kubelet's ConfigMap sync) and applies only the changed values |
+| Format, encoder, frame-rate conversion, preview or relay, sources, features | SwitchFrame restarts with new arguments; the reconciler applies everything again |
+| Any volume size (state, cache, recordings), or recording on to off | Refused at plan: `local-path` can't resize. Finalise and deploy again |
+
+**6. Finish.** `make finalise WORKLOAD=<id>` copies recordings to `.state/archive/<id>-<time>/recordings` before anything is destroyed, archives the design (YAML, config and source XML), logs, events, resources and SwitchFrame's state, then tears down and releases the allocation. After a successful teardown it also deletes the workload's secrets file and Terraform plan file, which hold secret values and are never archived, so deploying the same id again means setting its secrets again.
+
+Things to know:
+
+- **One compiled workload at a time on a 16-CPU host.** Media Functions are real time, so a workload reserves the sum of its pods' CPU limits: about 9 to 11 CPUs at the default SwitchFrame size. `make plan` refuses one that doesn't fit.
+- **Use 1080p or 2160p.** At the pinned commit, SwitchFrame's MXL path refuses frame widths not divisible by 6, so 720p can't carry MXL sources or the MXL programme output. The compiler refuses 720p in a design that has either, naming `engine.engine.resolution`.
+- **SRT listener sources** exist only while their encoder is connected. Their settings are applied on every connection, because SwitchFrame resets them.
+- Workloads compiled from XML live in `workloads/generated/` and are git-ignored. `scripts/workload-file.sh <id>` resolves an id to its file; a hand-written and a generated file with the same id is an error.
+
 ## What's in the box
 
 ```
 workloads/                   DESIGN: one MediaWorkload file per production
   generated/                 compiled from published XML (make import), git-ignored
+schemas/dmf-workload-v1.xsd  the XML handover format (DMF Toolkit keeps a byte-identical copy)
+facility/local.yaml          what this facility can run: capabilities, ports, UID range, limits
+tools/dmf_compile/           compiler: published XML + facility profile → workload YAML + reconciler config
 scripts/workload-file.sh     resolves a workload id to its file; used by every reader
 terraform/stacks/
   infrastructure-localhost   Infrastructure: existing host(s) → Ansible inventory
@@ -242,7 +296,8 @@ charts/
   mxl-function               generic MXL function (camera test sources, mxl-flow-agent)
   dmf-platform-config        CA issuers, TLS 1.3 policy, Flow Domain admission policy, alerts, dashboard
 images/
-  media-functions            MXL SDK v1.1.0 + SwitchFrame (-tags "embed_ui cgo mxl"), MXL tools, mxl-flow-agent
+  media-functions            MXL SDK v1.1.0 + SwitchFrame (-tags "embed_ui cgo mxl"), MXL tools, mxl-flow-agent,
+                             sf-reconciler (applies a workload's settings to SwitchFrame and keeps them applied)
   sso-bridge                 OIDC → SwitchFrame operator-token bridge
 docs/                        architecture, DMF compliance matrix
 ```
@@ -279,8 +334,8 @@ Three more patches fix timing defects found with the `sync` source (`mxl-syncsrc
 | Static checks (no cluster needed) | `make lint` |
 | Remove platform and infrastructure | `make finalise` each workload, then `make destroy` |
 
-Pinned versions: SwitchFrame `792361540f14` (thiagopnts fork), MXL SDK `v1.1.0`, k3s `v1.36.5+k3s1`, cert-manager `v1.21.3`, kube-prometheus-stack `92.17.0`, Keycloak `26.8.1`, oauth2-proxy `v7.15.5`. Change them in `images/media-functions/Dockerfile`, `ansible/playbooks/group_vars/all.yml` and `terraform/stacks/platform/variables.tf`.
+Pinned versions: SwitchFrame `792361540f14` ([Kokovec/switchframe](https://github.com/Kokovec/switchframe), a fork of mattlamb99/switchframe), MXL SDK `v1.1.0`, k3s `v1.36.5+k3s1`, cert-manager `v1.21.3`, kube-prometheus-stack `92.17.0`, Keycloak `26.8.1`, oauth2-proxy `v7.15.5`. Change them in `images/media-functions/Dockerfile`, `ansible/playbooks/group_vars/all.yml` and `terraform/stacks/platform/variables.tf`.
 
 ## Licence
 
-This package is released under the [MIT License](LICENSE). The images it builds download and compile third-party software that keeps its own licence, including [SwitchFrame](https://github.com/thiagopnts/switchframe) and [MXL](https://github.com/dmf-mxl/mxl). The scripts in `images/media-functions/patches/` modify that software at build time, and those changes apply under the licence of the code they modify.
+This package is released under the [MIT License](LICENSE). The images it builds download and compile third-party software that keeps its own licence, including [SwitchFrame](https://github.com/mattlamb99/switchframe) and [MXL](https://github.com/dmf-mxl/mxl). The scripts in `images/media-functions/patches/` modify that software at build time, and those changes apply under the licence of the code they modify.

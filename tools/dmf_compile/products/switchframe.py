@@ -197,6 +197,17 @@ class _Mixer:
             self.format = None
         self.size = frame_size(res) if self.format else None
         self.rate = RATES.get(rate) if self.format else None
+        if self.size and self.size[0] % 6:
+            # Stage 7B: SwitchFrame's 8-bit V210 converters (server/mxl/v210.go at the pinned commit)
+            # refuse a width not divisible by 6, so every MXL source frame and programme frame fails.
+            # Lift this only with a build patch that handles the remainder pixels.
+            mxl = [f"{n} MXL source{'s' * (n > 1)}" for n in [(self.fn.get("inputs") or {}).get("mxl-src", 0)] if n]
+            mxl += ["mxl-out"] if (self.fn.get("outputs") or {}).get("mxl-out", 0) else []
+            if mxl:
+                self.refuse(4, "engine.engine.resolution",
+                            f"{self.format} can't be used with MXL ({' and '.join(mxl)}): SwitchFrame's V210 path "
+                            f"needs a frame width divisible by 6, and {self.size[0]} isn't, so every MXL frame fails. "
+                            "Use 1080p or 2160p")
         for path, want in (("engine.engine.scan", "progressive"), ("engine.engine.colorspace", "BT709")):
             v = self.p(path, want)
             if v != want:

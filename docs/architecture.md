@@ -49,6 +49,52 @@ browser ──QUIC (udp quicPort)───────────────�
 
 SwitchFrame's QUIC listener uses its own short-lived self-signed certificate, pinned by the browser via `/api/cert-hash`. This is deliberate. The Prism WebTransport server speaks draft-02, which Chrome only negotiates with pinned certificates, so a CA-issued certificate would break WebTransport (see `ui/src/lib/prism/transport-utils.ts` upstream).
 
+## From design to running workload: the compiler
+
+A workload is either hand-written (`workloads/<id>.yaml`, like `news-studio`) or designed in DMF Toolkit and compiled. The compiler, `tools/dmf_compile` (Python, stdlib plus `xmlschema` and PyYAML), is the only way in for a design:
+
+```
+GET /api/workloads/<id>/published.xml          (or a file)
+   │  reader.py     refuse DOCTYPE, validate against schemas/dmf-workload-v1.xsd, XML → model
+   │  facility.py   check every selected option against facility/local.yaml (capabilities, limits)
+   │  products/     one module per product type (switchframe.py, dmf_mxl.py); unknown types refused
+   │  allocate.py   UID/GID, QUIC and SRT ports, hostname, domain → .state/allocations.json
+   │  sizing.py     MXL domain size, pod requests/limits, quota, volume sizes
+   ▼  emit.py
+workloads/generated/<id>.yaml          MediaWorkload v1alpha2: what Terraform and Ansible read
+workloads/generated/<id>.config.json   the reconciler's desired state: API calls per source, destinations, recording
+workloads/generated/<id>.source.xml    the XML as received, archived at finalise
+```
+
+Every problem is reported at once, each naming the function and option, and nothing is written when there is one. Rules include: a capability the facility lacks (ST 2110, MoQ, GPU, ASR, neural key, SCTE-104, SRT listener output); a format SwitchFrame doesn't have, or 720p with MXL, which SwitchFrame's V210 path can't carry; an MXL source whose format differs from the engine's; a missing secret; RTMP with an HEVC colour profile; a uid or flow ID another workload holds. The toolkit reads the same facility profile (`make facility-export`) to grey options out, so both sides apply one list. Flow IDs come from the toolkit (`uuidv5(workload uid, "<function>/<port>")`), so they stay the same across revisions; Terraform derives its own only for hand-written workloads.
+
+`make plan` then checks what only the live facility knows: capacity (CPU by the sum of pod limits, memory, every Flow Domain), port and UID clashes, free disk for new volumes, and volume sizes against live PVCs, which `local-path` can't resize.
+
+## Keeping settings applied: the reconciler
+
+SwitchFrame forgets destinations and recording when it restarts, resets an SRT source's label and position on every connection, and has no API object for an SRT listener source until its encoder connects. A one-shot start hook can't cover that, so the SwitchFrame pod runs a sidecar, `sf-reconciler` (`images/media-functions/sf-reconciler/reconciler.py`, Python stdlib, in the `mxl-tools` image).
+
+```
+vision-mixer pod
+  switchframe ◄──127.0.0.1:8081── reconciler ◄── /etc/switchframe/config/config.json  (ConfigMap, <id>.config.json)
+                                     │       ◄── /etc/switchframe/secrets/            (Secret workload-refs)
+                                     └── :9103/metrics  dmf_reconcile_pending|failed|api_up|errors_total
+```
+
+Every 5 s for two minutes after start, then every 30 s, it:
+
+1. Waits for the API, and registers a short-lived `dmf-automation-<epoch>` director operator.
+2. For each designed source that is present, applies its settings once per appearance: label, position, delay, trim, AFV, filters, EQ, compressor, key. An SRT source's appearance is a connection.
+3. Applies workload-wide settings once: master limiter, replay shutter angle, captions, SCTE-35 default rule.
+4. Creates and starts missing destinations once per SwitchFrame run, and recreates one only when its design or secret changed. An operator's deletion stands until the next restart.
+5. Starts recording once per run, and restarts it only if it failed, not after an operator's clean stop.
+6. Cuts to the design's on-air source when nothing is on air.
+7. Removes SRT caller pulls the design used to have, and only those, tracked in a file on the state volume.
+
+Calls are remembered by their content, pruned to the current config on every pass. When a new revision changes only the config, the ConfigMap is updated in place, nothing restarts, and the reconciler applies only the calls that changed, within about two minutes (the kubelet's ConfigMap sync); a value changed back to an earlier one is applied again. Unchanged settings aren't sent again, so an operator's live change to them stands. When SwitchFrame restarts, the reconciler notices and applies everything again.
+
+Commands need an identified operator once any operator exists. If registration doesn't answer (a first start busy writing ST-map tables), SwitchFrame isn't ready: the reconciler sends nothing and tries again next loop, rather than fall back to the bare API token. If a call comes back 403 `operator not identified`, or 401 on the reconciler's own operator token, it registers again and retries the call once. It never exits on API errors, and it redacts passphrases, stream keys and the API token from its logs.
+
 ## Naming and identities
 
 | Item | Value |
@@ -56,7 +102,7 @@ SwitchFrame's QUIC listener uses its own short-lived self-signed certificate, pi
 | Namespace | `wl-<workload>` |
 | Flow Domain | `/var/lib/dmf/mxl/<mediaExchange.domain>` |
 | Workload uid/gid | `mediaExchange.uid` (must equal gid, ≥ 10000, unique per facility) |
-| Flow ids | `uuidv5(url, "dmf://<workload>/<function>/<video\|audio>")`, stable across re-provisioning |
+| Flow ids | Compiled workloads: from the toolkit, `uuidv5(<workload uid>, "<function>/<port>")`, stable across revisions. Hand-written: `uuidv5(url, "dmf://<workload>/<function>/<video\|audio>")`, stable across re-provisioning |
 | Keycloak client | `wl-<workload>`, redirect `https://<hostname>/oauth2/callback` |
 | Keycloak groups | `/<workload>/{director,audio,graphics,captioner,viewer}` |
 | Labels | `dmf.ebu.ch/workload`, `dmf.ebu.ch/flow-domain`, `dmf.ebu.ch/uid`, `dmf.ebu.ch/layer`, `dmf.ebu.ch/role` |
@@ -65,5 +111,5 @@ SwitchFrame's QUIC listener uses its own short-lived self-signed certificate, pi
 
 - **Kubernetes rather than systemd.** SwitchFrame's deployment guide recommends systemd or Nomad. The DMF RA's Container Platform layer calls for declarative container orchestration (Kubernetes is its example), and multi-workload isolation, quotas and admission policy come with it. SwitchFrame still runs as a single process; Kubernetes only supervises it.
 - **MXL build.** The upstream Dockerfiles do not build with `-tags mxl`. `images/media-functions/Dockerfile` builds MXL SDK v1.1.0 the way upstream CI does (`ci-nightly.yml`) and links SwitchFrame against it. At the pinned commit, it also applies `patches/mxl-split-10bit-asm.sh`: cgo and Go assembly cannot share a package, so the 10-bit V210 kernels move into `mxl/v210asm`.
-- **Initial programme connection.** SwitchFrame writes programme video to MXL only once a source is on programme. PROVISION/CONFIGURE therefore cuts to the first configured source, and only when programme is empty, so the programme flow never sits stalled after provisioning.
+- **Initial programme connection.** SwitchFrame writes programme video to MXL only once a source is on programme. The reconciler therefore cuts to the design's on-air source (the first source of a hand-written workload), and only when programme is empty, so the programme flow never sits stalled after provisioning or a restart.
 - **No `--admin-token-file`.** The upstream deployment guide shows this flag, but it doesn't exist in the code at the pinned commit. Tokens are passed as `SWITCHFRAME_*` environment variables from Kubernetes Secrets.

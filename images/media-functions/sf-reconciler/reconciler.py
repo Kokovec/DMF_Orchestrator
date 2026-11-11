@@ -52,8 +52,24 @@ PLACEHOLDER = re.compile(r"\{key(?::([A-Za-z0-9_-]+))?\}")
 AUTOMATION_OPERATOR = re.compile(r"^dmf-automation-[0-9]+(-[0-9]+)?$")
 
 
+def call_id(call):
+    """A call's identity is its content, not its place in the list: after a config reload a changed
+    call (a new design value) is applied once, and an unchanged one is not repeated, so operator
+    changes to it stand. Stage 7B found index-based tracking skipped changed values until restart."""
+    return hashlib.sha256(json.dumps(call, sort_keys=True).encode()).hexdigest()
+
+
 class Unresolved(Exception):
     """A placeholder names a source whose key isn't known yet."""
+
+
+class NotReady(Exception):
+    """SwitchFrame answers state but not operator registration yet (it times out while a first
+    start writes its ST-map tables). Commands wait for the next loop instead of falling back to the
+    bare API token, which SwitchFrame refuses with 403 once operators exist (stage 7B)."""
+
+
+NOT_IDENTIFIED = "operator not identified"     # server/operator/middleware.go, 403
 
 
 # ------------------------------------------------------------------------------------------------
@@ -215,6 +231,7 @@ class Reconciler:
         self.config_fp = None
         self.secrets = {}
         self.op = None                 # (id, token) of this loop's automation operator
+        self.not_ready = False         # operator registration timed out (NotReady) on the last loop
         self.api_was_down = False
         self.stale_operators_checked = False
         self.managed_file = Path(managed_file) if managed_file else None
@@ -225,7 +242,7 @@ class Reconciler:
     # -- instance memory -------------------------------------------------------------------
     def reset(self, why):
         """Forget what was applied: SwitchFrame (re)started and remembers none of it."""
-        self.applied = {}              # input -> {"gen": ..., "done": set(call index), "failed": set()}
+        self.applied = {}              # input -> {"gen": ..., "done": set(call id), "failed": set(call id)}
         self.globals_done = set()
         self.globals_failed = set()
         self.dest_done = {}            # name -> fingerprint of the desired config it was created with
@@ -323,6 +340,8 @@ class Reconciler:
             if r.ok and isinstance(r.json(), dict) and r.json().get("token"):
                 self.op = (r.json().get("id"), r.json()["token"])
                 return self.op[1]
+            if r.status == 0 or r.status >= 500:
+                raise NotReady(r.message() or f"status {r.status}")
             if r.status != 409:
                 break
         self.error("operator registration failed; using the API token", status=r.status, error=r.message())
@@ -335,7 +354,6 @@ class Reconciler:
         operators = r.json() if r.ok else None
         if not isinstance(operators, list):
             return                     # tried again next loop
-        self.stale_operators_checked = True
         for o in operators:
             if not AUTOMATION_OPERATOR.match(str((o or {}).get("name", ""))):
                 continue
@@ -344,6 +362,7 @@ class Reconciler:
                 self.log("info", "removed an automation operator left by an interrupted loop", operator=o.get("name"))
             else:
                 self.error("could not remove a stale automation operator", operator=o.get("name"), status=rr.status)
+        self.stale_operators_checked = True      # not if NotReady interrupted the loop: tried again
 
     def release_operator(self):
         if self.op:
@@ -355,7 +374,18 @@ class Reconciler:
                     self.log("warning", "could not delete the automation operator", status=r.status)
 
     def command(self, method, path, body=None):
-        return self.api.call(method, path, body, token=self.operator())
+        token = self.operator()
+        r = self.api.call(method, path, body, token=token)
+        # 403 "operator not identified": we sent the bare API token while operators exist (our
+        # registration had failed). 401 on our operator's token: SwitchFrame no longer knows it
+        # (server/control/auth.go). Either way, register again and retry once, rather than count
+        # the call as failed.
+        if (r.status == 403 and r.message() == NOT_IDENTIFIED) or (r.status == 401 and token):
+            self.log("warning", "operator not identified: registering again", method=method, path=path,
+                     status=r.status)
+            self.op = None
+            r = self.api.call(method, path, body, token=self.operator())
+        return r
 
     # -- source keys -----------------------------------------------------------------------
     def srt_caller_key(self, sources, stream_id):
@@ -461,8 +491,17 @@ class Reconciler:
             p, f = self.recording(state)
             pending, failed = pending + p, failed + f
             pending += self.program()
+        except NotReady as exc:
+            if not self.not_ready:
+                self.log("warning", "SwitchFrame not ready for commands: operator registration didn't answer; "
+                                    "retrying every loop", error=str(exc))
+            self.not_ready = True
+            return self.publish(None, 0)
         finally:
             self.release_operator()
+        if self.not_ready:
+            self.not_ready = False
+            self.log("info", "SwitchFrame ready for commands")
         return self.publish(pending, failed)
 
     def publish(self, pending, failed):
@@ -557,7 +596,11 @@ class Reconciler:
                     self.log("info", "source reappeared: applying its settings again", input=inp, key=key)
                 mem = {"gen": gen, "key": key, "done": set(), "failed": set()}
                 self.applied[inp] = mem
-            for i, call in enumerate(calls):
+            ids = [call_id(c) for c in calls]
+            # Forget calls no longer in the config, so a value changed back (A, B, A) applies again.
+            mem["done"] &= set(ids)
+            mem["failed"] &= set(ids)
+            for i, call in zip(ids, calls):
                 if i in mem["done"] or i in mem["failed"]:
                     continue
                 result = self.run_call(call, key, live)
@@ -565,14 +608,17 @@ class Reconciler:
                     mem["done"].add(i)
                 elif result == "failed":
                     mem["failed"].add(i)
-            left = len(calls) - len(mem["done"]) - len(mem["failed"])
+            left = sum(1 for i in ids if i not in mem["done"] and i not in mem["failed"])
             pending += left
-            failed += len(mem["failed"])
+            failed += sum(1 for i in ids if i in mem["failed"])
         return pending, failed
 
     def global_calls(self):
         calls = self.config.get("global") or []
-        for i, call in enumerate(calls):
+        ids = [call_id(c) for c in calls]
+        self.globals_done &= set(ids)          # as in sources(): a value changed back applies again
+        self.globals_failed &= set(ids)
+        for i, call in zip(ids, calls):
             if i in self.globals_done or i in self.globals_failed:
                 continue
             result = self.run_call(call, None, {})
@@ -580,7 +626,8 @@ class Reconciler:
                 self.globals_done.add(i)
             elif result == "failed":
                 self.globals_failed.add(i)
-        return len(calls) - len(self.globals_done) - len(self.globals_failed), len(self.globals_failed)
+        left = sum(1 for i in ids if i not in self.globals_done and i not in self.globals_failed)
+        return left, sum(1 for i in ids if i in self.globals_failed)
 
     # -- destinations ----------------------------------------------------------------------
     def desired_destination(self, d):

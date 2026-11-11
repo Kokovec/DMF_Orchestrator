@@ -14,9 +14,10 @@
 #   docker build --target mxl-tools   -t dmf.local/mxl-tools:<tag>   images/media-functions
 
 # Upstream sources come from forks, pinned to commits (tagged dmf-base-* in the
-# forks), and base images are pinned by digest. Forks: github.com/dmf-mxl/mxl and
-# github.com/thiagopnts/switchframe. Not pinned: apt packages and vcpkg's own tool
-# checkout (the MXL manifest's builtin-baseline sets its package versions).
+# forks), and base images are pinned by digest. Forks: github.com/Kokovec/mxl (of
+# dmf-mxl/mxl) and github.com/Kokovec/switchframe (of mattlamb99/switchframe).
+# Not pinned: apt packages and vcpkg's own tool checkout (the MXL manifest's
+# builtin-baseline sets its package versions).
 ARG BASE_IMAGE=ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 ARG MXL_REPO=https://github.com/Kokovec/mxl.git
 ARG MXL_VERSION=v1.1.0
@@ -151,7 +152,7 @@ FROM ${BASE_IMAGE} AS switchframe
 ARG SWITCHFRAME_REF
 LABEL org.opencontainers.image.title="switchframe-mxl" \
       org.opencontainers.image.description="SwitchFrame vision mixer with MXL media exchange (EBU DMF Media Function)" \
-      org.opencontainers.image.source="https://github.com/thiagopnts/switchframe" \
+      org.opencontainers.image.source="https://github.com/Kokovec/switchframe" \
       org.opencontainers.image.revision="${SWITCHFRAME_REF}" \
       org.opencontainers.image.licenses="MIT"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \

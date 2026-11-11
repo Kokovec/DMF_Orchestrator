@@ -154,6 +154,27 @@ class Rules(RepoTest):
                 self.assertRefused(d, 4, f"{VM}: engine.engine.resolution, engine.engine.rate",
                                    f"{name} is not a SwitchFrame format")
 
+    def test_rule4_720p_refused_with_mxl(self):
+        """Stage 7B: SwitchFrame's V210 path needs a width divisible by 6; 1280 isn't."""
+        d = Doc().set(VM, "engine.engine.resolution", "1280x720").set(VM, "engine.engine.rate", "50")
+        self.assertRefused(d, 4, f"{VM}: engine.engine.resolution",
+                           "720p50 can't be used with MXL (3 MXL sources and mxl-out): SwitchFrame's V210 path "
+                           "needs a frame width divisible by 6, and 1280 isn't")
+        # mxl-out alone is enough.
+        d = Doc().set(VM, "engine.engine.resolution", "1280x720").use(VM, "inputs", "mxl-src", 0)
+        self.assertRefused(d, 4, f"{VM}: engine.engine.resolution", "720p29.97 can't be used with MXL (mxl-out)")
+
+    def test_rule4_720p_without_mxl_and_other_formats_pass(self):
+        d = (Doc().set(VM, "engine.engine.resolution", "1280x720")
+             .use(VM, "inputs", "mxl-src", 0).use(VM, "outputs", "mxl-out", 0))
+        problems = self.repo.problems(d.bytes())
+        self.assertFalse([p for p in problems if "V210" in p.message], "\n".join(map(str, problems)))
+        self.assertEqual(self.repo.compile(Doc().bytes()).workload_id, "studio-a")   # 1080p with MXL
+        # 2160p (3840 is divisible by 6) is refused here for other reasons, such as studio-a's 1080p
+        # sources (rule 5), but not by rule 4.
+        problems = self.repo.problems(Doc().set(VM, "engine.engine.resolution", "3840x2160").bytes())
+        self.assertNotIn(4, {p.rule for p in problems}, "\n".join(map(str, problems)))
+
     # Rule 5 --------------------------------------------------------------------------------
     def test_rule5_source_flow_matches_engine(self):
         d = Doc()

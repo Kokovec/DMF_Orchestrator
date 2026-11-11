@@ -9,5 +9,5 @@ version: 0.1.0
 appVersion: "792361540f14"
 keywords: [dmf, ebu, mxl, broadcast, switcher]
 sources:
-  - https://github.com/thiagopnts/switchframe
+  - https://github.com/Kokovec/switchframe
   - https://github.com/dmf-mxl/mxl

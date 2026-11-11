@@ -10,12 +10,12 @@ Status key: **Met**: implemented as the RA describes. **Partial**: implemented w
 
 | Stage | RA expectation | Implementation | Status |
 |---|---|---|---|
-| Design | Templated workload description: production, functions, requirements | `workloads/<name>.yaml` (`kind: MediaWorkload`) is the single source of truth for Ansible and Terraform | Met |
-| Plan | Calculate resources, reserve capacity, set up authorisations, test | `make plan`: schema checks, uid/domain uniqueness, capacity check against allocatable minus other reservations (`ansible/scripts/capacity.py`), `terraform plan` | Met |
+| Design | Templated workload description: production, functions, requirements | Designed in DMF Toolkit and published as XML (schema `schemas/dmf-workload-v1.xsd`), compiled by `tools/dmf_compile` into `workloads/generated/<id>.yaml`; or hand-written as `workloads/<name>.yaml`. That file (`kind: MediaWorkload`) is the single source of truth for Ansible and Terraform. Tested end to end from the toolkit's API on 2026-11-11, not through its UI | Met |
+| Plan | Calculate resources, reserve capacity, set up authorisations, test | The compiler refuses options the facility profile (`facility/local.yaml`) can't honour, naming each, before anything changes; the toolkit greys out the same options from an exported copy. `make plan`: schema checks, uid/domain/port uniqueness, capacity check against allocatable minus other reservations, CPU counted by pod limits (`ansible/scripts/capacity.py`), volume checks against live PVCs and free disk, `terraform plan` | Met |
 | Provision | Make resources available; install and launch Media Functions | `make provision`: Flow Domain tmpfs on every host, namespace, ResourceQuota, Keycloak client and groups, Helm releases | Met |
-| Configure | Configure and connect Media Functions; alerts | Initial MXL connections (`--mxl-sources`); the mixer pod restores programme and source labels on every start; a gate waits until every expected flow is live and NMOS-registered | Met |
+| Configure | Configure and connect Media Functions; alerts | Initial MXL connections (`--mxl-sources`); a reconciler sidecar applies the design's source, audio, destination and recording settings, again after every SwitchFrame restart and SRT reconnection, and applies a changed design without a restart; a gate waits until every expected flow is live and NMOS-registered. | Met |
 | Operate | Authenticate users; operate through UIs within reserved resources | Keycloak SSO → SwitchFrame UI; quota enforces the reservation | Met |
-| Finalise & Review | Delete functions, authorisations, reservations; record changes persistently | `make finalise`: archives logs, events, rendered resources and SwitchFrame state to `.state/archive/`, runs `terraform destroy`, unmounts the Flow Domain | Met |
+| Finalise & Review | Delete functions, authorisations, reservations; record changes persistently | `make finalise`: copies recordings first and stops if that fails, archives the design (YAML, config, source XML), logs, events, rendered resources and SwitchFrame state to `.state/archive/`, runs `terraform destroy`, unmounts the Flow Domain, releases the allocation, and deletes the workload's secrets file and Terraform plan file (never archived) | Met |
 | Monitor & Update | Continuous monitoring at every layer; CI/CD for updates | Prometheus, Alertmanager, Grafana, Loki; `make status`. No CI pipeline is shipped | Partial |
 
 ## 2. Horizontal layers
@@ -78,9 +78,9 @@ Status key: **Met**: implemented as the RA describes. **Partial**: implemented w
 | RA item | Implementation | Status |
 |---|---|---|
 | Well-defined units acting on media | Input functions (`mxl-gst-testsrc` per camera, `mxl-syncgen` as an A/V sync source) and a processing function (SwitchFrame vision mixer + audio mixer) | Met |
-| Stateless | SwitchFrame keeps presets, macros, operators and SCTE-35 rules on disk. They live on a PVC and are archived at FINALISE | Partial |
+| Stateless | SwitchFrame keeps presets, macros, operators and SCTE-35 rules on disk, and programme recordings on a second volume. Both are PVCs, archived at FINALISE. Destinations and recording aren't persisted by SwitchFrame; the reconciler restores them | Partial |
 | Fine-grained functions | SwitchFrame bundles vision mixing, audio, keying, graphics, replay and encode in one process | Partial |
-| External interfaces: ST 2110 / SRT / etc. | SRT listener (UDP `srtPort`). SwitchFrame's ST 2110/DPDK path is not enabled (needs DPDK NICs) | Partial |
+| External interfaces: ST 2110 / SRT / etc. | SRT sources as listener (UDP `srtPort`, by stream ID) or caller; SRT caller output with AES encryption; RTMP/RTMPS output. ST 2110 (needs DPDK NICs), MoQ input and SRT listener output aren't enabled, and the compiler refuses a design that selects them | Partial |
 | Timestamp at ingress (JT-NM / MS-04 timing model) | MXL grains are indexed by wall-clock time; SwitchFrame derives a shared A/V epoch, not per-grain origin timestamps | Partial |
 | Delivered through registries and Helm charts | OCI images + Helm charts (`charts/switchframe`, `charts/mxl-function`) | Met |
 | Version pinning | SwitchFrame and MXL commits (from forks), base images by digest, Go, k3s and charts are pinned. Ubuntu packages and the vcpkg tool checkout are not, so builds are not fully reproducible | Partial |

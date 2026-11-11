@@ -41,6 +41,9 @@ class FakeSwitchFrame:
         self.calls = []          # (method, path, body)
         self.down = False
         self.refuse = {}         # (method, path regex) -> status
+        self.drop = set()        # (method, path regex): close without a reply, as a client sees a timeout
+        self.refuse_once = {}    # like refuse, but each entry answers one call and is then removed
+        self.lose_operators_on = None   # path regex: once, forget automation operators before that call
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.handler())
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
@@ -117,14 +120,27 @@ class FakeSwitchFrame:
                 body = json.loads(self.rfile.read(n)) if n else None
                 path = self.path
                 auth = self.headers.get("Authorization", "")[7:]
+                if any(m == method and re.search(rx, path) for m, rx in fake.drop):
+                    fake.calls.append((method, path, body))
+                    self.close_connection = True
+                    self.connection.close()
+                    return
                 with fake.lock:
                     fake.calls.append((method, path, body))
+                    if fake.lose_operators_on and method != "GET" and re.search(fake.lose_operators_on, path):
+                        fake.lose_operators_on = None
+                        for oid in [o for o, v in fake.operators.items() if v["name"].startswith("dmf-automation-")]:
+                            del fake.operators[oid]
+                    for (m, rx), status in list(fake.refuse_once.items()):
+                        if m == method and re.search(rx, path):
+                            del fake.refuse_once[(m, rx)]
+                            return self.reply(status, {"error": "refused once"})
                     for (m, rx), status in fake.refuse.items():
                         if m == method and re.search(rx, path):
                             # Echo the request, secrets and all, as a careless server might.
                             return self.reply(status, {"error": f"refused {json.dumps(body)}"})
                     if auth != TOKEN and auth not in {o["token"] for o in fake.operators.values()}:
-                        return self.reply(401, {"error": "unauthorized"})
+                        return self.reply(401, {"error": "invalid token"})   # server/control/auth.go
                     if method != "GET" and not path.startswith("/api/operator/") and fake.operators \
                             and auth not in {o["token"] for o in fake.operators.values()}:
                         return self.reply(403, {"error": "operator not identified"})
@@ -480,6 +496,93 @@ class ReconcilerTest(unittest.TestCase):
         self.assertEqual(self.fake.sources[CAM1]["label"], "Operator's name")
         self.assertEqual(self.fake.program, CAM2)
         self.assertEqual(len(self.fake.mutations("/label$")), 2)
+
+    def test_changed_config_applies_only_what_changed(self):
+        """A new revision hot-loaded without a restart (stage 7B): the changed values are applied
+        once; unchanged ones are not repeated, so an operator's change to them stands."""
+        self.both()
+        self.step()
+        self.fake.sources[CAM2]["label"] = "Operator's name"
+        cfg = config()
+        cfg["global"][0]["body"]["threshold"] = -4
+        cam1 = next(s for s in cfg["sources"] if s["ref"]["key"] == CAM1)
+        next(c for c in cam1["apply"] if c["path"].endswith("/label"))["body"]["label"] = "Camera One"
+        before_labels = len(self.fake.mutations("/label$"))
+        self.write_config(cfg)
+        for _ in range(3):
+            self.assertEqual(self.step(), 0)
+        limiter = self.fake.mutations("^/api/audio/limiter$")
+        self.assertEqual(len(limiter), 2, "the changed limiter is applied once")
+        self.assertEqual(self.fake.sources[CAM1]["label"], "Camera One")
+        self.assertEqual(self.fake.sources[CAM2]["label"], "Operator's name", "unchanged call not repeated")
+        self.assertEqual(len(self.fake.mutations("/label$")), before_labels + 1)
+
+    def test_value_changed_back_is_applied_again(self):
+        """A, B, then A again: the applied sets are pruned to the current config's calls, so the
+        third revision's value is sent although it was applied once before (stage 7B review)."""
+        self.both()
+        self.step()
+        for threshold in (-4, -6):
+            cfg = config()
+            cfg["global"][0]["body"]["threshold"] = threshold
+            self.write_config(cfg)
+            for _ in range(2):
+                self.assertEqual(self.step(), 0)
+        limiter = self.fake.mutations("^/api/audio/limiter$")
+        self.assertEqual([b["threshold"] for _, _, b in limiter], [-6, -4, -6])
+
+    def registrations(self):
+        return [c for c in self.fake.calls if c[:2] == ("POST", "/api/operator/register")]
+
+    def test_registration_timeout_waits_without_token_fallback(self):
+        """SwitchFrame busy (a first start's ST-map prewarm): state answers, registration doesn't.
+        The reconciler waits and retries; it never commands with the bare token, which SwitchFrame
+        refuses with 403 once operators exist (stage 7B)."""
+        self.fake.operators["human"] = {"id": "human", "name": "director1", "token": "human-token"}
+        self.both()
+        self.fake.drop.add(("POST", "^/api/operator/register$"))
+        for _ in range(3):
+            self.assertGreater(self.step(), 0)
+        self.assertEqual(self.fake.mutations(), [], "no command without an operator")
+        self.assertNotIn("using the API token", self.out.getvalue())
+        self.assertNotIn("call failed", self.out.getvalue())
+        self.assertEqual(len([l for l in self.logs() if "not ready for commands" in l["msg"]]), 1, "logged once")
+        self.fake.drop.clear()
+        self.assertEqual(self.step(), 0)
+        self.assertEqual(self.fake.sources[CAM1]["label"], "Camera 1")
+        self.assertEqual(self.fake.program, CAM1)
+        self.assertTrue(self.fake.recording["active"])
+        self.assertEqual(list(self.fake.operators), ["human"])
+
+    def test_operator_not_identified_reregisters_and_retries(self):
+        """Registration refused once (not a timeout), so the first command goes with the bare token,
+        and SwitchFrame answers 403 'operator not identified' because operators exist. The reconciler
+        registers again and retries the call rather than counting it as failed."""
+        self.fake.operators["human"] = {"id": "human", "name": "director1", "token": "human-token"}
+        self.both()
+        self.fake.refuse_once[("POST", "^/api/operator/register$")] = 400
+        self.assertEqual(self.step(), 0)
+        self.assertEqual(self.fake.sources[CAM1]["label"], "Camera 1")
+        statuses = [c for c in self.fake.calls if c[0] == "POST" and c[1].endswith("/label")]
+        self.assertEqual(len(statuses), 3, "CAM1 twice (403, then retried), CAM2 once")
+        self.assertEqual(len(self.registrations()), 2)
+        self.assertIn("registering again", self.out.getvalue())
+        self.assertNotIn("call failed", self.out.getvalue())
+        self.assertEqual(self.metrics.failed, 0)
+        self.assertEqual(list(self.fake.operators), ["human"])
+
+    def test_lost_operator_reregisters_and_retries(self):
+        """Our operator vanishes mid-pass: SwitchFrame answers its token 401 'invalid token'
+        (server/control/auth.go). Same handling: register again and retry the call."""
+        self.fake.operators["human"] = {"id": "human", "name": "director1", "token": "human-token"}
+        self.both()
+        self.fake.lose_operators_on = r"/api/sources/.*/position$"
+        self.assertEqual(self.step(), 0)
+        self.assertEqual(self.fake.sources[CAM2]["position"], 2)
+        self.assertEqual(len(self.registrations()), 2)
+        self.assertNotIn("call failed", self.out.getvalue())
+        self.assertEqual(self.metrics.failed, 0)
+        self.assertEqual(list(self.fake.operators), ["human"])
 
     def test_operator_stopped_recording_and_removed_destination_stay_so(self):
         self.both()
