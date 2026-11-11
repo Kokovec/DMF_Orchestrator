@@ -64,18 +64,60 @@ class Rules(RepoTest):
         self.assertRefused(d, 1, f"{VM}: inputs.ndi-src", "no block 'ndi-src'")
 
     # Rule 2 --------------------------------------------------------------------------------
-    def test_rule2_one_switchframe(self):
+    LIMIT = "limits.functionsPerWorkload of facility local"
+
+    def two_switchframes(self):
         d = Doc()
         d.fn("cam2").set("type", "switchframe.1")
         d.fn("cam2").set("typeVersion", "1.1.0")
-        self.assertRefused(d, 2, "workload: functions", "exactly one switchframe.1 function, has 2 (cam2, vision-mixer)")
+        return d
 
-    def test_rule2_one_domain(self):
+    def test_rule2_no_switchframe(self):
+        d = Doc().remove_function(VM)
+        p = self.assertRefused(d, 2, "workload: functions", f"needs exactly one switchframe.1 function, has 0; {self.LIMIT}")
+        self.assertNotIn("()", next(x.message for x in p if x.rule == 2))
+
+    def test_rule2_one_switchframe_passes(self):
+        self.assertEqual(self.repo.compile(Doc().bytes()).workload_id, "studio-a")
+
+    def test_rule2_two_switchframes(self):
+        self.assertRefused(self.two_switchframes(), 2, "workload: functions",
+                           f"needs exactly one switchframe.1 function, has 2 (cam2, vision-mixer); {self.LIMIT}")
+
+    def two_domains(self):
         d = Doc()
         ET.SubElement(d.root.find(q("domains")), q("domain"), {"id": "backup"})
         d.fn("cam2").set("domain", "backup")
-        p = self.assertRefused(d, 2, "workload: domains", "exactly one domain")
+        return d
+
+    def test_rule2_two_domains(self):
+        p = self.assertRefused(self.two_domains(), 2, "workload: domains",
+                               "needs exactly one domain (all pods share one host), has 2: main, backup; "
+                               "limits.domainsPerWorkload of facility local")
         self.assertEqual(len(p), 1)
+
+    def test_rule2_function_outside_the_workloads_domain(self):
+        d = Doc()
+        d.fn("cam2").set("domain", "backup")
+        p = self.assertRefused(d, 2, "cam2: domain", "'backup' is not the workload's domain 'main'")
+        self.assertEqual([x.where for x in p if x.rule == 2], ["cam2: domain"])
+
+    def test_rule2_profile_without_these_limits_keeps_one_switchframe_and_one_domain(self):
+        fac = self.repo.facility("nolimits", limits={"maxRecordingGiB": 200})
+        self.assertEqual(fac.limits["functionsPerWorkload"], {"switchframe.1": {"min": 1, "max": 1}})
+        self.assertEqual(fac.limits["domainsPerWorkload"], 1)
+        self.assertEqual(self.repo.compile(Doc().bytes(), fac).workload_id, "studio-a")
+        self.assertRefused(self.two_switchframes(), 2, "workload: functions",
+                           "needs exactly one switchframe.1 function, has 2 (cam2, vision-mixer); "
+                           "limits.functionsPerWorkload of facility nolimits", fac)
+        self.assertRefused(Doc().remove_function(VM), 2, "workload: functions", "exactly one switchframe.1 function, has 0", fac)
+        self.assertRefused(self.two_domains(), 2, "workload: domains", "needs exactly one domain", fac)
+
+    def test_rule2_limits_for_other_types_come_from_the_profile(self):
+        fac = self.repo.facility("onecam", **{"limits.functionsPerWorkload": {
+            "switchframe.1": {"min": 1, "max": 1}, "dmf-mxl.1": {"max": 1}}})
+        problems = self.assertRefused(Doc(), 2, "workload: functions", "needs at most one dmf-mxl.1 function, has 2 (", fac)
+        self.assertEqual(sum(p.rule == 2 for p in problems), 1)
 
     # Rule 3 --------------------------------------------------------------------------------
     def test_rule3_gated_inputs_outputs_features_and_values(self):

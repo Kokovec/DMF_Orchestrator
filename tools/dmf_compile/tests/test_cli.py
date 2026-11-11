@@ -31,6 +31,28 @@ class Cli(RepoTest):
         self.assertEqual(set(exported["capabilities"]), set(facility.CAPABILITIES))
         self.assertIs(exported["capabilities"]["mxl"], True)
         self.assertIs(exported["capabilities"]["gpu"], False)
+        self.assertEqual(exported["limits"], {"maxRecordingGiB": 200, "domainsPerWorkload": 1,
+                                              "functionsPerWorkload": {"switchframe.1": {"min": 1, "max": 1}}})
+
+    def test_facility_export_fills_in_rule_2_limits_a_profile_leaves_out(self):
+        self.repo.facility("nolimits", limits={"maxRecordingGiB": 200})
+        rc, _, _ = self.repo.cli("facility-export", "--facility", "nolimits")
+        self.assertEqual(rc, 0)
+        exported = json.loads((self.repo.path / ".state" / "facility-nolimits.json").read_text())
+        self.assertEqual(exported["limits"]["functionsPerWorkload"], {"switchframe.1": {"min": 1, "max": 1}})
+        self.assertEqual(exported["limits"]["domainsPerWorkload"], 1)
+
+    def test_rule_2_limits_the_compiler_cant_build_are_refused(self):
+        (self.repo.path / "facility" / "big.yaml").write_text(
+            "apiVersion: dmf.local/v1alpha1\nkind: Facility\nmetadata: {name: big}\nspec:\n  baseDomain: dmf.test\n"
+            "  workloadUids: {first: 1, last: 2}\n  ports: {quic: {first: 1, last: 2}, srt: {first: 1, last: 2}}\n"
+            "  capabilities: {mxl: true}\n  limits:\n    domainsPerWorkload: 2\n"
+            "    functionsPerWorkload: {switchframe.1: {min: 1, max: 2}, acme.1: {max: 1}, dmf-mxl.1: {min: 3, max: 1}}\n")
+        rc, _, err = self.repo.cli("facility-export", "--facility", "big")
+        self.assertEqual(rc, 1)
+        for text in ("functionsPerWorkload.switchframe.1 must be {min: 1, max: 1}", "functionsPerWorkload.acme.1 is not "
+                     "a function type", "functionsPerWorkload.dmf-mxl.1 must be {min, max}", "domainsPerWorkload must be 1"):
+            self.assertIn(text, err)
 
     def test_bad_facility_profile(self):
         (self.repo.path / "facility" / "bad.yaml").write_text(

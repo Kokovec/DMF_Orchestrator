@@ -26,3 +26,5 @@ spec:
     scte104: false            # depends on MXL data flows, which aren't built
   limits:
     maxRecordingGiB: 200
+    functionsPerWorkload: {switchframe.1: {min: 1, max: 1}}   # rule 2; Terraform runs one SwitchFrame
+    domainsPerWorkload: 1                                      # rule 2

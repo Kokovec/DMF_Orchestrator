@@ -55,6 +55,19 @@ class Result:
         self.__dict__.update(kw)
 
 
+_WORDS = {0: "no", 1: "one", 2: "two", 3: "three"}
+
+
+def _between(lo, hi):
+    """'exactly one', 'at least two', 'at most one', 'between one and three'."""
+    n = lambda v: _WORDS.get(v, str(v))
+    if hi is None:
+        return f"at least {n(lo)}"
+    if lo == hi:
+        return f"exactly {n(lo)}"
+    return f"at most {n(hi)}" if lo == 0 else f"between {n(lo)} and {n(hi)}"
+
+
 def compile_document(doc, repo, facility, source_name, source_bytes):
     """doc: the published JSON from reader.read(). Returns a Result; raises CompileError."""
     report = Report()
@@ -79,21 +92,31 @@ def compile_document(doc, repo, facility, source_name, source_bytes):
         else:
             known.append((fn, module))
 
-    # Rule 2: one SwitchFrame, one domain.
+    # Rule 2: function and domain counts within the facility's limits.
+    limits = facility.limits
+    for ftype, rng in limits["functionsPerWorkload"].items():
+        fns = [fn["id"] for fn in spec["functions"] if fn["type"] == ftype]
+        lo, hi = rng.get("min", 0), rng.get("max")
+        if len(fns) < lo or (hi is not None and len(fns) > hi):
+            report.refuse(2, "workload: functions", f"needs {_between(lo, hi)} {ftype} function, has {len(fns)}"
+                          + (f" ({', '.join(sorted(fns))})" if fns else "")
+                          + f"; limits.functionsPerWorkload of facility {facility.name}")
     mixers = [fn for fn in spec["functions"] if fn["type"] == "switchframe.1"]
-    if len(mixers) != 1:
-        report.refuse(2, "workload: functions", f"needs exactly one switchframe.1 function, has {len(mixers)}"
-                      + (f" ({', '.join(f['id'] for f in mixers)})" if mixers else ""))
     domains = [d["id"] for d in spec["domains"]]
-    if len(domains) != 1:
-        report.refuse(2, "workload: domains", f"needs exactly one domain (all pods share one host), has {len(domains)}: {', '.join(domains)}")
+    most = limits["domainsPerWorkload"]
+    if len(domains) > most or not domains:
+        report.refuse(2, "workload: domains", f"needs {_between(1, most)} domain (all pods share one host), has "
+                                              f"{len(domains)}: {', '.join(domains)}; limits.domainsPerWorkload of "
+                                              f"facility {facility.name}")
     else:
         for fn in spec["functions"]:
-            if fn["domain"] != domains[0]:
-                report.refuse(2, where(fn["id"], "domain"), f"{fn['domain']!r} is not the workload's domain {domains[0]!r}")
+            if fn["domain"] not in domains:
+                report.refuse(2, where(fn["id"], "domain"), f"{fn['domain']!r} is not the workload's domain {domains[0]!r}"
+                              if len(domains) == 1 else f"{fn['domain']!r} is not one of the workload's domains")
         for flow in spec["flows"]:
-            if flow["domain"] != domains[0]:
-                report.refuse(2, f"flow {flow['label']}: domain", f"{flow['domain']!r} is not the workload's domain {domains[0]!r}")
+            if flow["domain"] not in domains:
+                report.refuse(2, f"flow {flow['label']}: domain", f"{flow['domain']!r} is not the workload's domain {domains[0]!r}"
+                              if len(domains) == 1 else f"{flow['domain']!r} is not one of the workload's domains")
 
     # Functions, test sources first.
     compiled = {}

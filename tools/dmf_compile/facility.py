@@ -10,6 +10,9 @@ from .problems import CompileError, Problem
 # Every capability the compiler gates on (docs/orchestration/02-switchframe-options.md).
 CAPABILITIES = ["mxl", "srt-in", "srt-caller-out", "rtmp-out", "recording", "srt-listener-out",
                 "st2110", "moq", "gpu", "asr", "neural-key", "ai-segment", "scte104"]
+# Rule 2's limits when a profile doesn't set them: what the compiler and Terraform build.
+DEFAULT_FUNCTIONS_PER_WORKLOAD = {"switchframe.1": {"min": 1, "max": 1}}
+DEFAULT_DOMAINS_PER_WORKLOAD = 1
 _DOMAIN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$")
 
 
@@ -25,6 +28,8 @@ class Facility:
         self.srt_ports = (spec["ports"]["srt"]["first"], spec["ports"]["srt"]["last"])
         self.capabilities = dict(spec["capabilities"])
         self.limits = dict(spec.get("limits") or {})
+        self.limits.setdefault("functionsPerWorkload", DEFAULT_FUNCTIONS_PER_WORKLOAD)
+        self.limits.setdefault("domainsPerWorkload", DEFAULT_DOMAINS_PER_WORKLOAD)
 
     def has(self, capability):
         return bool(self.capabilities.get(capability, False))
@@ -65,6 +70,7 @@ def load(repo, name="local"):
                 problems.append(_problem(path, f"spec.capabilities.{cap} is not a capability the compiler knows"))
             elif not isinstance(v, bool):
                 problems.append(_problem(path, f"spec.capabilities.{cap} must be true or false"))
+        problems += _check_limits(path, spec.get("limits") or {})
     except (KeyError, TypeError, AttributeError) as e:
         problems.append(_problem(path, f"missing or malformed field: {e}"))
     if problems:
@@ -72,6 +78,35 @@ def load(repo, name="local"):
     facility = Facility(doc, path)
     _check_inventory(repo, facility)
     return facility
+
+
+def _count(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
+def _check_limits(path, limits):
+    """Rule 2's limits. The compiler builds one SwitchFrame and one MXL domain per workload, so the
+    profile can't allow more of either."""
+    from . import products
+    problems = []
+    fpw = limits.get("functionsPerWorkload", DEFAULT_FUNCTIONS_PER_WORKLOAD)
+    if not isinstance(fpw, dict):
+        return [_problem(path, "spec.limits.functionsPerWorkload must map a function type to {min, max}")]
+    for ftype, rng in fpw.items():
+        where = f"spec.limits.functionsPerWorkload.{ftype}"
+        if ftype not in products.TYPES:
+            problems.append(_problem(path, f"{where} is not a function type the compiler knows"))
+        elif not (isinstance(rng, dict) and set(rng) <= {"min", "max"} and all(_count(v) for v in rng.values())
+                  and rng.get("min", 0) <= rng.get("max", rng.get("min", 0))):
+            problems.append(_problem(path, f"{where} must be {{min, max}} with whole numbers, min <= max"))
+    if fpw.get("switchframe.1") != {"min": 1, "max": 1}:
+        problems.append(_problem(path, "spec.limits.functionsPerWorkload.switchframe.1 must be {min: 1, max: 1}: "
+                                       "the compiler and Terraform build one SwitchFrame per workload"))
+    dpw = limits.get("domainsPerWorkload", DEFAULT_DOMAINS_PER_WORKLOAD)
+    if dpw != 1 or isinstance(dpw, bool):
+        problems.append(_problem(path, f"spec.limits.domainsPerWorkload must be 1, not {dpw!r}: "
+                                       "the compiler builds one MXL domain per workload"))
+    return problems
 
 
 def _check_inventory(repo, facility):
