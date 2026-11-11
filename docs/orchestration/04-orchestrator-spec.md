@@ -63,6 +63,8 @@ spec:
     scte104: false
   limits:
     maxRecordingGiB: 200
+    functionsPerWorkload: {switchframe.1: {min: 1, max: 1}}   # rule 2; Terraform runs one SwitchFrame
+    domainsPerWorkload: 1                                      # rule 2
 ```
 
 ## Compile rules
@@ -70,10 +72,10 @@ spec:
 Refuse with a message naming function and parameter. Report all problems, not just the first.
 
 1. `schemaVersion`, `apiVersion`, module type and version are known.
-2. Exactly one `switchframe.1` function (assumption 2). One domain.
+2. Function counts and the domain count are within the facility's `limits.functionsPerWorkload` and `limits.domainsPerWorkload`; for `local`, exactly one `switchframe.1` function (assumption 2) and one domain. Read from the profile, so the toolkit's exported copy and the compiler can't disagree.
 3. Facility capability exists for each selected input, output, feature and enum value (see [02-switchframe-options.md](02-switchframe-options.md)).
 4. `resolution` + `rate` is a real SwitchFrame format.
-5. Every MXL source flow matches the engine: frame size, rate, `video/v210`, progressive, BT709, and `transfer` absent or SDR; audio 48 kHz float32. `dmf-mxl.2` requires 1080p29.97. Name the source, its value and the engine's value: the toolkit doesn't compare a source's format with the engine, so this is where a mismatch is caught. No wire reads `mxl-out.anc`: the toolkit can't produce one, so this only catches hand-edited XML.
+5. Every MXL source flow matches the engine: frame size, rate, `video/v210`, progressive, BT709, and `transfer` absent or SDR; audio 48 kHz float32. `dmf-mxl.2` requires 1080p29.97. Name the source, its value and the engine's value: the toolkit checks this too from stage 7A, and this catches hand-edited XML. No wire reads `mxl-out.anc`: the toolkit can't produce one, so this only catches hand-edited XML.
 6. Every required secret exists in `.state/secrets/<id>.yaml`. Stage 5 onward.
 7. No hand-written `workloads/<id>.yaml` exists for this id. The generated header is information only.
 8. Other things the generated YAML must satisfy: everything `workload-plan.yml` asserts.
