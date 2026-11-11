@@ -160,7 +160,7 @@ These are product limits, so they apply with or without a facility (found in sta
 
 - `publishProblems` refuses an `rtmp-out` copy with a `standard-hevc` or `professional` colour profile. The dialog says why.
 - EQ and limiter ranges match the mixer's, as listed in [02-switchframe-options.md](02-switchframe-options.md). Narrowing needs no module version bump while no saved workload uses the version.
-- Help text: an enabled key is over programme all the time. A replay buffer of 300 s holds only up to about 5.6 Mbit/s per source. The SCTE-35 default rule `drop` applies to every cue with no matching rule, including operators' cues. An all-features 1080p design should request 4 CPUs.
+- Help text: an enabled key is over programme all the time. A replay buffer of 300 s holds only up to about 5.6 Mbit/s per source. The SCTE-35 default rule `drop` applies to every cue with no matching rule, including operators' cues. The default of 2 CPUs covers an all-features 1080p design.
 
 ## 9. XML publish (stage 2; extends R8.2)
 

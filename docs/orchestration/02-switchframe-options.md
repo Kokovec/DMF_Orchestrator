@@ -19,7 +19,7 @@ at the end.
 | Copies per input and output block | Selects blocks below | 4 |
 | Feature on/off (`features`) | See each feature | 4 onward |
 | `access.roles` (workload level) | Keycloak group membership, `spec.access.members` | 4 |
-| `resources.cpu`, `.memoryMiB` | Pod requests; limits = 3× CPU, 2× memory; `GOMEMLIMIT` = 75% of memory limit; these ratios reproduce today's chart defaults. Guidance, not enforced: an all-features 1080p29.97 design averaged 3.6 cores and wasn't throttled at `cpu` 2 or 4, so use 4 to reserve what it really uses. A request of 2 lets workloads oversubscribe the host | 4 |
+| `resources.cpu`, `.memoryMiB` | Pod requests; limits = 3× CPU, 2× memory; `GOMEMLIMIT` = 75% of memory limit; these ratios reproduce today's chart defaults. CPU is reserved by limit (see the 04 spec's Sizing), so the default of 2 reserves 6 CPUs, which covers the 3.6 cores an all-features 1080p29.97 design averaged without throttling. Don't raise it on this host: 4 reserves 12 for SwitchFrame alone, and the workload can't fit in 16 | 4 |
 | `resources.gpu` | **G `gpu`** | Not built |
 
 ### Engine (`engine.engine.*`)

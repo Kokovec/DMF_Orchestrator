@@ -48,7 +48,7 @@ These rules come from things that went wrong.
 - Before asking for a `make provision`, run `make plan` for every workload your change affects, generated ones included.
 - Give `ANSIBLE_LOG_PATH` as an absolute path, because Ansible runs from `ansible/`.
 - An Ansible task that ignores failures can hide a lost archive. Verify what a destructive step depends on before recommending it.
-- Capacity is about 19.5 GiB of memory, including platform services. `news-studio` reserves 12 GiB and only fits on its own. Compiled workloads reserve about 6 GiB plus their MXL domain, so two fit at once. Check before planning a test that needs more.
+- Capacity is 16 CPUs and about 19.5 GiB of memory, including platform services (about 0.7 CPU). CPU is reserved by the sum of pod CPU limits, not requests. `news-studio` reserves 12 GiB and only fits on its own. A compiled workload at the default size (`studio-a`) reserves 11 CPUs and about 7 GiB plus its MXL domain, so only one fits at a time. Check before planning a test that needs more.
 
 ## SwitchFrame
 

@@ -31,6 +31,7 @@ Stdlib plus `xmlschema` and PyYAML. Add `xmlschema` to the pip line in `scripts/
 | `make deploy XML=…` | `import`, then `plan` and `provision` for the workload id in the file |
 | `make facility-export [FACILITY=local]` | Writes `.state/facility-<name>.json` for the toolkit |
 | `make secret-set WORKLOAD=<id> NAME=<name>` | Prompts without echo; writes `.state/secrets/<id>.yaml`, mode 600 |
+| `make start WORKLOAD=<id>` | Also waits for Keycloak and the workload's SSO gateway to answer before opening Chrome. Otherwise the first login after a cold start gets "no available server", then a 500 on the callback |
 
 ## Facility profile
 
@@ -99,9 +100,10 @@ allocation; new workloads take the lowest free values. `finalise` releases them.
 ## Sizing (`sizing.py`)
 
 - **MXL domain** (measured in stage 4: 106 MiB used by `studio-a`): `sizeMiB = max(512, ceil(1.25 × (Σ video flows grains × V210 frame bytes + 1 MiB per audio flow) / 2²⁰) + 256)`, with `grains = max(5, ceil(historyMs × rate / 1000))`. V210 frame bytes = `ceil(width / 6) × 16 × height`. `studio-a`: 657 MiB; 2160p59.94 with 4 flows: 3426 MiB.
-- **Pods:** `switchframe` from `resources` (see options doc), with the replay tmpfs added to its memory request and limit but not to `GOMEMLIMIT`, because the Go heap doesn't hold it; test sources 250m/256Mi requests, 1/1Gi limits; flow agent 50m/64Mi; gateway 30m/56Mi; reconciler 20m/32Mi.
+- **Pods:** `switchframe` from `resources` (see options doc), with the replay tmpfs added to its memory request and limit but not to `GOMEMLIMIT`, because the Go heap doesn't hold it; test sources 250m/256Mi requests, 1/1Gi limits; flow agent 50m/64Mi, CPU limit 500m; gateway 30m/56Mi, CPU limit 1 (its two containers set none, so each gets the LimitRange's 500m); reconciler 20m/32Mi, CPU limit 200m.
 - **Capacity check:** `capacity.py` counts every workload's Flow Domain (tmpfs is RAM) as reserved, not only this one's.
-- **Quota:** `requests.cpu` and `requests.memory` = sum of pod requests + 20%, rounded up. Compare `news-studio`'s hand-set 7 CPU and 10 GiB when reviewing: the new value will be lower, and that is correct as long as pods schedule.
+- **CPU is reserved by limit, not request:** media functions are real time, so a workload reserves the sum of its pods' CPU limits, and `capacity.py` compares that with allocatable CPU. It counts another workload as the larger of its quota and its live pods' CPU limits, so one provisioned before this rule is still counted in full; platform services still count by request. On 2026-11-10, `studio-a` and `full-settings` together passed the request-based check (about 5 CPUs requested) but used 14.8 of 16 cores, with a load average of 42; test sources sat at their limit and the UI lost sync. Alone, `studio-a` used 2.9 cores in total. On this host that means one compiled workload at a time.
+- **Quota:** `resourceProfile.cpu`, and the quota's `requests.cpu`, = sum of pod CPU limits, rounded up to whole CPUs: 11 for `studio-a` (6 + 3 × 1 + 0.5 + 1 + 0.2). It's held as `requests.cpu`, which it always covers, not as `limits.cpu`: a `limits.cpu` quota at the exact sum would leave no room for the gateway's rolling-update surge pod. `requests.memory` = sum of pod memory requests + 20%, rounded up. `news-studio` is hand-written and keeps its hand-set 7 CPU and 10 GiB.
 - **Volumes:** state PVC = `max(5, clips.storageMaxGB + 1 + playout.cacheMaxGB when playout is on)` GiB; the playout cache is in `<state dir>/playout-cache`. Recordings PVC = `recording.storageGiB`. `/cache` is a PVC, not an emptyDir, sized ST-map prewarm + 2 GiB. SwitchFrame prewarms the ST-map tables on every start into `--cache-dir` and skips tables already there (`stmap.DirComplete`), so a PVC generates them once per workload. An emptyDir regenerates about 16 GiB, 3 minutes of CPU, at each restart; at 5 GiB it caused evictions every 20–90 s in stage 4. Prewarm = 5 effects × 90 frames × 18 bytes per pixel, so the `/cache` PVC is 9 GiB at 720p, 18 at 1080p (16 of tables + 2) and 65 at 2160p. Finalise doesn't archive it: it's regenerable.
 - **Replay tmpfs:** `min(sources, 8) × 200 + 64` MiB, nothing when replay is off. The product gives each source one 200 MiB ring whatever the buffer length, and every ring ends up full, measured in stage 6 (evidence in `sizing.py`). Sized for designed sources: an operator-added source also takes a ring, and if the tmpfs fills, the product's replay writes fail rather than the pod.
 
@@ -128,7 +130,7 @@ metadata:
   uid: 9dd110d0-8c14-5c77-acf6-3eb708bf0c13
   revision: 1
 spec:
-  resourceProfile: {cpu: "4", memory: 6Gi, gpu: 0}
+  resourceProfile: {cpu: "11", memory: 6Gi, gpu: 0}
   mediaExchange: {domain: studio-a, uid: 20002, gid: 20002, sizeMiB: 2048}
   access:
     hostname: studio-a.dmf.test
