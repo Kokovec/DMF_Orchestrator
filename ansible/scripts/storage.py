@@ -3,8 +3,10 @@
 
 local-path can't resize a volume, so a changed size otherwise fails partway through the apply and
 leaves the Deployment changed. It doesn't enforce a volume's size either, so nothing else stops
-new volumes promising more than the disk has. Hand-written workloads size theirs in chart values
-and are skipped. Prints a JSON verdict; exit 1 if the workload is refused.
+new volumes promising more than the disk has. And a design that turns recording off would have
+the chart delete the live recordings volume, and local-path its files, without finalise's archive.
+Hand-written workloads size theirs in chart values and are skipped. Prints a JSON verdict; exit 1
+if the workload is refused.
 
 usage: storage.py <workload.yaml> <kubeconfig>
 """
@@ -18,9 +20,13 @@ GIB = 2**30
 VOLUMES = (("state", "stateGi"), ("cache", "cacheGi"), ("recordings", "recordingsGi"))
 
 
+def mixer_of(wl):
+    return next(f for f in wl["spec"]["functions"] if f["kind"] == "switchframe")
+
+
 def wanted_volumes(wl):
     """{pvc name: bytes} the design asks for, or None if the workload isn't generated."""
-    mixer = next(f for f in wl["spec"]["functions"] if f["kind"] == "switchframe")
+    mixer = mixer_of(wl)
     sizes = mixer.get("volumes")
     if not sizes:
         return None
@@ -66,6 +72,13 @@ def main() -> int:
             problems.append(f"{pvc}: the design asks for {gib(size)}, but the live volume is {gib(live[pvc])}. "
                             "local-path can't resize a volume. Restore the value in the design, "
                             f"or run make finalise WORKLOAD={name} and deploy again.")
+
+    recordings = f"{mixer_of(wl)['name']}-recordings"
+    if recordings in live and recordings not in wanted:
+        problems.append(f"{recordings}: the design turns recording off, but the live recordings volume "
+                        f"({gib(live[recordings])}) exists. Applying it would delete the volume and the recordings on it. "
+                        "Keep recording on in the design, "
+                        f"or run make finalise WORKLOAD={name}, which archives the recordings, and deploy again.")
 
     new = sum(size for pvc, size in wanted.items() if pvc not in live)
     root = local_path_root(kubeconfig)

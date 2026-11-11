@@ -76,6 +76,6 @@ class Compiled:
 
     def __init__(self, entry, pod_requests, config=None, secrets=()):
         self.entry = entry                # the function's item in spec.functions of the workload YAML
-        self.pod_requests = pod_requests  # [(cpu cores, memory MiB)] that count towards the quota
+        self.pod_requests = pod_requests  # [(cpu request, memory request MiB, cpu limit)] for the quota
         self.config = config              # <id>.config.json content, for SwitchFrame
         self.secrets = list(secrets)      # [(where, secret name)] that rule 6 must find

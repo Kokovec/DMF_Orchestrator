@@ -15,6 +15,55 @@ NS="wl-$WORKLOAD"
 SERVICE=k3s
 systemctl cat k3s >/dev/null 2>&1 || SERVICE=k3s-agent
 
+# Sign-in goes through Keycloak and the workload's SSO gateway, which start on their own after a
+# cold start. Until both answer, the first login gets Traefik's "no available server", then a 500
+# on the callback. So wait for them through the ingress, as the browser will reach them: Keycloak's
+# realm (terraform/stacks/platform/identity.tf) must serve its discovery document, and the
+# gateway's /sso/login must redirect to that realm's login page, which must load.
+wait_for_sso() {
+  local host domain ip kc ca step got login
+  host=$(awk '/^ *hostname:/ {print $2; exit}' "$1")
+  if [ -z "$host" ]; then
+    echo "$1 has no access.hostname, so there's no sign-in to wait for."
+    return 0
+  fi
+  domain="${host#*.}"
+  kc="https://keycloak.$domain/realms/dmf"
+  # The same address windows-browser.sh maps *.<domain> to.
+  ip=$(kubectl -n kube-system get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+  [ -n "$ip" ] || ip=$(ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1)
+  ca=(-k)
+  [ -f "$ROOT/.state/dmf-root-ca.crt" ] && ca=(--cacert "$ROOT/.state/dmf-root-ca.crt")
+  probe() {  # url -> "<status> <redirect url>"
+    local h="${1#https://}"
+    curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 5 "${ca[@]}" \
+      --resolve "${h%%/*}:443:$ip" "$1" 2>/dev/null || true
+  }
+  echo "Waiting for sign-in: Keycloak and the $host SSO gateway..."
+  for _ in $(seq 1 100); do
+    step="Keycloak ($kc)"
+    got=$(probe "$kc/.well-known/openid-configuration")
+    if [ "${got%% *}" = 200 ]; then
+      step="SSO gateway (https://$host/sso/login)"
+      got=$(probe "https://$host/sso/login")
+      login="${got#* }"
+      if [ "${got%% *}" = 302 ] && [ "${login#"$kc/"}" != "$login" ]; then
+        step="Keycloak login page"
+        got=$(probe "$login")
+        if [ "${got%% *}" = 200 ]; then
+          echo "Sign-in is ready."
+          return 0
+        fi
+      fi
+    fi
+    sleep 3
+  done
+  echo "Sign-in isn't ready after 5 minutes: $step answered '${got%% *}' through the ingress at $ip." >&2
+  echo "Check: kubectl -n dmf-identity get pods; kubectl -n $NS get pods" >&2
+  echo "The facility and $WORKLOAD are up; Chrome wasn't opened. When sign-in answers: make windows-browser WORKLOAD=$WORKLOAD" >&2
+  return 1
+}
+
 case "$ACTION" in
 start)
   # k3s pulls in the Flow Domain mounts it needs (drop-ins from the mxl_domain role).
@@ -62,6 +111,7 @@ start)
       else
         echo "$WORKLOAD is on air."
       fi
+      wait_for_sso "$FILE" || exit 1
       if [ -z "${NO_BROWSER:-}" ] && command -v powershell.exe >/dev/null; then
         DMF_CHROME_DEBUG_PORT="${DMF_CHROME_DEBUG_PORT:-9333}" "$ROOT/scripts/windows-browser.sh" "$WORKLOAD" \
           || echo "Could not open Chrome; the facility is up. Try: make windows-browser WORKLOAD=$WORKLOAD" >&2

@@ -7,6 +7,13 @@ RAM) with cluster allocatable minus every other workload's reservation
 (ResourceQuota "dmf-reservation") and every other workload's Flow Domain.
 Prints a JSON verdict; exit 1 if it won't fit.
 
+CPU is reserved by limit, not request: media functions are real time, and two
+workloads that fitted by request starved each other (04-orchestrator-spec.md,
+Sizing). A compiled workload's resourceProfile.cpu is already the sum of its
+pods' CPU limits. Another workload counts as the larger of its quota and the CPU
+limits of its live pods, so one provisioned before this rule, whose quota holds
+its requests, is still counted in full.
+
 Flow Domains are read from the tmpfs mounts under the MXL root on this host: all
 workloads share one host (docs/orchestration/README.md, assumption 3), and a
 mount reserves its size whether or not its namespace still exists.
@@ -68,21 +75,33 @@ def main() -> int:
     alloc_cpu = sum(qty(n["status"]["allocatable"]["cpu"]) for n in nodes)
     alloc_mem = sum(qty(n["status"]["allocatable"]["memory"]) for n in nodes)
 
+    own_ns = f"wl-{name}"  # skipped: re-planning an already provisioned workload replaces its reservation
+    quota_cpu, live_limits_cpu = {}, {}
     reserved_cpu = reserved_mem = 0.0
     for q in kubectl(kubeconfig, "get", "resourcequota", "-A", "--field-selector", "metadata.name=dmf-reservation")["items"]:
-        if q["metadata"]["namespace"] == f"wl-{name}":
-            continue  # re-planning an already provisioned workload
+        ns = q["metadata"]["namespace"]
+        if ns == own_ns:
+            continue
         hard = q["spec"].get("hard", {})
-        reserved_cpu += qty(hard.get("requests.cpu", 0))
+        quota_cpu[ns] = qty(hard.get("requests.cpu", 0))
         reserved_mem += qty(hard.get("requests.memory", 0))
-    # Platform services (monitoring, Keycloak, ingress ...) are not quota'd: use their actual requests.
     for p in kubectl(kubeconfig, "get", "pods", "-A", "--field-selector", "status.phase=Running")["items"]:
-        if p["metadata"]["namespace"].startswith("wl-"):
+        ns = p["metadata"]["namespace"]
+        if ns == own_ns:
             continue
         for c in p["spec"]["containers"]:
-            req = c.get("resources", {}).get("requests", {})
-            reserved_cpu += qty(req.get("cpu", 0))
-            reserved_mem += qty(req.get("memory", 0))
+            res = c.get("resources", {})
+            if ns.startswith("wl-"):
+                # Every container in a workload namespace has a CPU limit (the LimitRange's, if not its own).
+                live_limits_cpu[ns] = live_limits_cpu.get(ns, 0.0) + qty(res.get("limits", {}).get("cpu", 0))
+            else:
+                # Platform services (monitoring, Keycloak, ingress ...) are not quota'd: use their actual requests.
+                req = res.get("requests", {})
+                reserved_cpu += qty(req.get("cpu", 0))
+                reserved_mem += qty(req.get("memory", 0))
+    other_cpu = {ns: max(quota_cpu.get(ns, 0.0), live_limits_cpu.get(ns, 0.0))
+                 for ns in sorted(set(quota_cpu) | set(live_limits_cpu))}
+    reserved_cpu += sum(other_cpu.values())
 
     reserved_mem += sum(domains.values())
 
@@ -95,6 +114,7 @@ def main() -> int:
         "fits": need_cpu <= free_cpu and need_mem <= free_mem,
         "requested": {"cpu": need_cpu, "memory_gib": round(need_mem / 2**30, 2), "flow_domain_mib": shm // 2**20},
         "free": {"cpu": round(free_cpu, 2), "memory_gib": round(free_mem / 2**30, 2)},
+        "other_workloads_cpu": {ns[3:]: round(v, 2) for ns, v in other_cpu.items()},
         "other_flow_domains_mib": {d.rsplit("/", 1)[1]: v // 2**20 for d, v in sorted(domains.items())},
         "allocatable": {"cpu": alloc_cpu, "memory_gib": round(alloc_mem / 2**30, 2)},
     }

@@ -4,14 +4,16 @@ from fractions import Fraction
 
 MIB = 2**20
 
-# Fixed pod requests of everything but SwitchFrame: (cpu cores, memory MiB).
+# Pods other than SwitchFrame and the test sources: (cpu request, memory request MiB, cpu limit).
 TEST_SOURCE_REQUESTS = (Fraction(1, 4), 256)
 TEST_SOURCE_LIMITS = (1, 1024)
-FLOW_AGENT = (Fraction(5, 100), 64)
-SSO_GATEWAY = (Fraction(3, 100), 56)     # oauth2-proxy 20m/32Mi + sso-bridge 10m/24Mi
-RECONCILER = (Fraction(2, 100), 32)
+LIMIT_RANGE_DEFAULT_CPU = Fraction(1, 2)  # dmf-defaults LimitRange (terraform/stacks/workload/main.tf)
+FLOW_AGENT = (Fraction(5, 100), 64, Fraction(1, 2))         # helm_release.flow_agent: 50m/64Mi, limit 500m
+# oauth2-proxy 20m/32Mi + sso-bridge 10m/24Mi. Neither sets a CPU limit, so each gets the LimitRange's.
+SSO_GATEWAY = (Fraction(3, 100), 56, 2 * LIMIT_RANGE_DEFAULT_CPU)
+RECONCILER = (Fraction(2, 100), 32, Fraction(1, 5))         # chart values reconciler: 20m/32Mi, limit 200m
 
-QUOTA_HEADROOM = Fraction(6, 5)          # +20%
+QUOTA_HEADROOM = Fraction(6, 5)          # +20%, on memory requests
 # MXL domain, measured on studio-a (stage 4, df and du on the domain): each video flow holds 5
 # grains (27.69 MB at 1080p: 5 x 5,529,600 B + 44 KB of headers) while historyMs isn't passed to
 # MXL; each 2-channel audio flow 158 KB.
@@ -86,8 +88,16 @@ def switchframe_resources(cpu, memory_mib, replay_tmpfs_mib=0):
     request_mib = memory_mib + tmpfs
     return {
         "requests": {"cpu": cpu_quantity(cpu), "memory": memory_quantity(request_mib)},
-        "limits": {"cpu": cpu_quantity(cpu * 3), "memory": memory_quantity(heap_limit_mib + tmpfs)},
+        "limits": {"cpu": cpu_quantity(switchframe_cpu_limit(cpu)), "memory": memory_quantity(heap_limit_mib + tmpfs)},
     }, go_mem_limit(heap_limit_mib * Fraction(3, 4)), request_mib
+
+
+def switchframe_cpu_limit(cpu):
+    return Fraction(str(cpu)) * 3
+
+
+def test_source_cpu_limit(cpu):
+    return max(Fraction(str(cpu)), Fraction(TEST_SOURCE_LIMITS[0]))
 
 
 def test_source_resources(cpu=None, memory_mib=None):
@@ -96,22 +106,25 @@ def test_source_resources(cpu=None, memory_mib=None):
     memory_mib = Fraction(str(memory_mib)) if memory_mib is not None else Fraction(TEST_SOURCE_REQUESTS[1])
     return {
         "requests": {"cpu": cpu_quantity(cpu), "memory": memory_quantity(memory_mib)},
-        "limits": {"cpu": cpu_quantity(max(cpu, Fraction(TEST_SOURCE_LIMITS[0]))),
+        "limits": {"cpu": cpu_quantity(test_source_cpu_limit(cpu)),
                    "memory": memory_quantity(max(memory_mib, Fraction(TEST_SOURCE_LIMITS[1])))},
     }
 
 
-def quota(requests):
-    """requests: iterable of (cpu cores, memory MiB) for every pod container in the workload.
-    Sum + 20%, rounded up to whole CPUs and whole GiB."""
-    cpu = sum((Fraction(str(c)) for c, _ in requests), Fraction(0)) * QUOTA_HEADROOM
-    mem = sum((Fraction(str(m)) for _, m in requests), Fraction(0)) * QUOTA_HEADROOM
+def quota(pods):
+    """pods: iterable of (cpu request, memory request MiB, cpu limit) for every pod container in
+    the workload. CPU is reserved by limit, because media functions are real time: the sum of the
+    CPU limits, rounded up to whole CPUs. Memory: the sum of the requests + 20%, rounded up to
+    whole GiB."""
+    cpu = sum((Fraction(str(lim)) for _, _, lim in pods), Fraction(0))
+    mem = sum((Fraction(str(m)) for _, m, _ in pods), Fraction(0)) * QUOTA_HEADROOM
     return {"cpu": str(math.ceil(cpu)), "memory": f"{math.ceil(mem / 1024)}Gi", "gpu": 0}
 
 
-def workload_requests(switchframe_cpu, switchframe_memory_mib, test_sources):
-    """The pod requests that the quota has to cover. test_sources: [(cpu, memory MiB)]."""
-    pods = [(switchframe_cpu, switchframe_memory_mib)]
+def workload_requests(switchframe, test_sources):
+    """The pods the quota has to cover, as (cpu request, memory request MiB, cpu limit).
+    switchframe: one such tuple; test_sources: a list of them."""
+    pods = [switchframe]
     pods += list(test_sources)
     pods += [FLOW_AGENT, SSO_GATEWAY, RECONCILER]
     return pods

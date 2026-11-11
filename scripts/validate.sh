@@ -11,7 +11,7 @@ run() { "$@" || { echo "FAILED: $*"; fail=1; }; }
 
 step "python"
 run python3 -m py_compile images/media-functions/mxl-flow-agent/agent.py images/media-functions/sf-reconciler/reconciler.py \
-  images/sso-bridge/bridge.py ansible/scripts/capacity.py scripts/secret-set.py $(find tools/dmf_compile -name '*.py')
+  images/sso-bridge/bridge.py ansible/scripts/capacity.py ansible/scripts/storage.py scripts/secret-set.py $(find tools/dmf_compile -name '*.py')
 
 step "flow agent tests (unreachable NMOS registry)"
 run env PYTHONDONTWRITEBYTECODE=1 python3 -I images/media-functions/mxl-flow-agent/test_agent.py

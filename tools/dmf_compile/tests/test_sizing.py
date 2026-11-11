@@ -64,10 +64,19 @@ class Sizing(unittest.TestCase):
                          {"requests": {"cpu": "2", "memory": "2Gi"}, "limits": {"cpu": "2", "memory": "2Gi"}})
 
     def test_quota_studio_a(self):
-        # 2 + 3 x 0.25 + 0.05 + 0.03 + 0.02 = 2.85 CPU -> 3.42 -> 4
-        # 4096 + 3 x 256 + 64 + 56 + 32 = 5016 MiB -> 6019.2 -> 6 GiB
-        pods = sizing.workload_requests(2, 4096, [(Fraction(1, 4), 256)] * 3)
-        self.assertEqual(sizing.quota(pods), {"cpu": "4", "memory": "6Gi", "gpu": 0})
+        # CPU by limit: 6 (SwitchFrame, 3 x 2) + 3 x 1 + 0.5 (flow agent) + 2 x 0.5 (gateway, LimitRange
+        # default) + 0.2 (reconciler) = 10.7 -> 11, what the live studio-a pods' limits add up to.
+        # Memory by request: 4096 + 3 x 256 + 64 + 56 + 32 = 5016 MiB -> 6019.2 -> 6 GiB
+        sf = (Fraction(2), 4096, sizing.switchframe_cpu_limit(2))
+        src = (Fraction(1, 4), 256, sizing.test_source_cpu_limit(Fraction(1, 4)))
+        pods = sizing.workload_requests(sf, [src] * 3)
+        self.assertEqual(sizing.quota(pods), {"cpu": "11", "memory": "6Gi", "gpu": 0})
+
+    def test_cpu_is_reserved_by_limit_not_request(self):
+        # A test source asking for more than its 1 CPU default limit is limited, and reserved, at its request.
+        self.assertEqual(sizing.test_source_cpu_limit(2), 2)
+        light = sizing.quota([(Fraction(1, 10), 64, 4)])
+        self.assertEqual(light["cpu"], "4")
 
     def test_volumes(self):
         # /cache: ST map prewarm (15.64 GiB at 1080p -> 16) + 2. State: clips + 1, plus the playout
@@ -86,7 +95,7 @@ class CompiledSizes(RepoTest):
     def test_studio_a(self):
         r = self.repo.compile(Doc().bytes())
         # Three sources: 664 MiB of replay tmpfs joins the mixer's request, so 5680 MiB -> x1.2 -> 7 GiB.
-        self.assertEqual(r.doc["spec"]["resourceProfile"], {"cpu": "4", "memory": "7Gi", "gpu": 0})
+        self.assertEqual(r.doc["spec"]["resourceProfile"], {"cpu": "11", "memory": "7Gi", "gpu": 0})
         self.assertEqual(r.doc["spec"]["mediaExchange"]["sizeMiB"], 657)
 
     def test_2160p_workload(self):

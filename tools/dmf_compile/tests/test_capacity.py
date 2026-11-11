@@ -23,27 +23,43 @@ CLUSTER = {
     ("get", "nodes"): {"items": [{"status": {"allocatable": {"cpu": "16", "memory": "20Gi"}}}]},
     ("get", "resourcequota"): {"items": [{"metadata": {"namespace": "wl-studio-25"},
                                           "spec": {"hard": {"requests.cpu": "4", "requests.memory": "6Gi"}}}]},
-    ("get", "pods"): {"items": []},
 }
 
 
-def fake_run(argv, **kw):
-    if argv[0] == "findmnt":
-        return subprocess.CompletedProcess(argv, 0, FINDMNT, "")
-    key = tuple(argv[3:5])
-    return subprocess.CompletedProcess(argv, 0, json.dumps(CLUSTER[key]), "")
+def pod(ns, *containers):
+    """containers: (cpu request, cpu limit or None)"""
+    return {"metadata": {"namespace": ns},
+            "spec": {"containers": [{"resources": {"requests": {"cpu": req},
+                                                   **({"limits": {"cpu": lim}} if lim else {})}}
+                                    for req, lim in containers]}}
+
+
+# studio-25 as provisioned before CPU was reserved by limit: quota 4, pods limited to 10.7.
+STUDIO_25_PODS = [pod("wl-studio-25", ("2", "6"), ("20m", "200m")), pod("wl-studio-25", ("250m", "1")),
+                  pod("wl-studio-25", ("250m", "1")), pod("wl-studio-25", ("250m", "1")),
+                  pod("wl-studio-25", ("50m", "500m")), pod("wl-studio-25", ("20m", "500m"), ("10m", "500m"))]
+
+
+def fake_runner(pods):
+    def fake_run(argv, **kw):
+        if argv[0] == "findmnt":
+            return subprocess.CompletedProcess(argv, 0, FINDMNT, "")
+        key = tuple(argv[3:5])
+        body = {"items": pods} if key == ("get", "pods") else CLUSTER[key]
+        return subprocess.CompletedProcess(argv, 0, json.dumps(body), "")
+    return fake_run
 
 
 class Capacity(unittest.TestCase):
-    def verdict(self, memory, size_mib):
+    def verdict(self, memory, size_mib, cpu="4", pods=()):
         wl = {"metadata": {"name": "studio-a"},
-              "spec": {"resourceProfile": {"cpu": "4", "memory": memory},
+              "spec": {"resourceProfile": {"cpu": cpu, "memory": memory},
                        "mediaExchange": {"domain": "studio-a", "sizeMiB": size_mib}}}
         with tempfile.NamedTemporaryFile("w", suffix=".yaml") as fh:
             yaml.safe_dump(wl, fh)
             fh.flush()
             out = io.StringIO()
-            with mock.patch.object(capacity.subprocess, "run", side_effect=fake_run), \
+            with mock.patch.object(capacity.subprocess, "run", side_effect=fake_runner(list(pods))), \
                     mock.patch.object(capacity.sys, "argv", ["capacity.py", fh.name, "kubeconfig"]), redirect_stdout(out):
                 rc = capacity.main()
         return rc, json.loads(out.getvalue())
@@ -61,6 +77,27 @@ class Capacity(unittest.TestCase):
         rc, v = self.verdict("11Gi", 657)
         self.assertFalse(v["fits"])
         self.assertEqual(rc, 1)
+
+    def test_another_workload_counts_by_its_live_cpu_limits_when_its_quota_is_lower(self):
+        # studio-25's quota says 4, but its pods are limited to 10.7: 16 - 10.7 = 5.3 free.
+        rc, v = self.verdict("6Gi", 657, cpu="11", pods=STUDIO_25_PODS)
+        self.assertEqual(v["other_workloads_cpu"], {"studio-25": 10.7})
+        self.assertEqual(v["free"]["cpu"], 5.3)
+        self.assertFalse(v["fits"])
+        self.assertEqual(rc, 1)
+
+    def test_a_quota_higher_than_the_live_limits_still_counts(self):
+        # Without pods (stopped, or still starting), the quota is the reservation.
+        rc, v = self.verdict("6Gi", 657, cpu="11")
+        self.assertEqual(v["other_workloads_cpu"], {"studio-25": 4})
+        self.assertEqual(v["free"]["cpu"], 12)
+        self.assertTrue(v["fits"])
+
+    def test_platform_services_count_by_request_and_its_own_pods_not_at_all(self):
+        pods = [pod("dmf-identity", ("500m", "2")), pod("wl-studio-a", ("2", "6"))]
+        rc, v = self.verdict("6Gi", 657, cpu="11", pods=pods)
+        self.assertEqual(v["free"]["cpu"], 16 - 4 - 0.5)
+        self.assertNotIn("studio-a", v["other_workloads_cpu"])
 
 
 if __name__ == "__main__":

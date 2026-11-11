@@ -188,6 +188,11 @@ resource "kubernetes_namespace_v1" "workload" {
   }
 }
 
+# The workload's reservation, which capacity.py reads. For a compiled workload, resourceProfile.cpu
+# is the sum of its pods' CPU limits (media functions are real time, so CPU is reserved by limit)
+# and resourceProfile.memory its memory requests + 20%. Held as requests.cpu, which it always
+# covers, rather than limits.cpu: a limits.cpu quota at the exact sum would leave no room for a
+# rolling update's surge pod.
 resource "kubernetes_resource_quota_v1" "reservation" {
   metadata {
     name      = "dmf-reservation"

@@ -728,4 +728,4 @@ class _Mixer:
         if res.get("gpu", {}).get("count", 0) > 0:
             self.need("gpu", "resources.gpu", f"{res['gpu']['count']} GPU ({res['gpu'].get('class')})")
         resources, gml, request_mib = sizing.switchframe_resources(cpu, mem, replay_tmpfs)
-        return resources, gml, (Fraction(str(cpu)), request_mib)
+        return resources, gml, (Fraction(str(cpu)), request_mib, sizing.switchframe_cpu_limit(cpu))

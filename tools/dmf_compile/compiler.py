@@ -138,8 +138,7 @@ def compile_document(doc, repo, facility, source_name, source_bytes):
              for f in spec["flows"] if f["essence"] == "video"]
     size_mib = sizing.domain_size_mib(video, sum(1 for f in spec["flows"] if f["essence"] == "audio"))
     test_sources = [r for fid, c in compiled.items() if c is not mixer for r in c.pod_requests]
-    sf_cpu, sf_mem = mixer.pod_requests[0]
-    profile = sizing.quota(sizing.workload_requests(sf_cpu, sf_mem, test_sources))
+    profile = sizing.quota(sizing.workload_requests(mixer.pod_requests[0], test_sources))
 
     functions = [style_function(c.entry) for fid, c in compiled.items() if c is not mixer] + [style_function(mixer.entry)]
     out = {"apiVersion": "dmf.local/v1alpha2", "kind": "MediaWorkload",

@@ -65,6 +65,18 @@ class Storage(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("vm-recordings", v["problems"][0])
 
+    def test_turning_recording_off_with_a_live_recordings_volume_is_refused(self):
+        rc, v = self.verdict({"stateGi": 5, "cacheGi": 18},
+                             [pvc("vm-state", "5Gi"), pvc("vm-cache", "18Gi"), pvc("vm-recordings", "10Gi")])
+        self.assertEqual(rc, 1)
+        self.assertEqual(len(v["problems"]), 1)
+        p = v["problems"][0]
+        self.assertIn("vm-recordings: the design turns recording off, but the live recordings volume (10 GiB) exists", p)
+        self.assertIn("Keep recording on in the design", p)
+        self.assertIn("make finalise WORKLOAD=a, which archives the recordings, and deploy again", p)
+        # Recording off with no recordings volume is fine.
+        self.assertEqual(self.verdict({"stateGi": 5, "cacheGi": 18}, [pvc("vm-state", "5Gi"), pvc("vm-cache", "18Gi")])[0], 0)
+
     def test_new_volumes_must_fit_the_free_disk(self):
         rc, v = self.verdict({"stateGi": 400, "cacheGi": 101}, [], free_gib=500)
         self.assertEqual(rc, 1)

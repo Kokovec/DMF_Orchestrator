@@ -52,8 +52,9 @@ def compile(fn, ctx, report):
     res = fn.get("resources") or {}
     cpu, mem = res.get("cpu"), res.get("memoryMiB")
     entry["resources"] = sizing.test_source_resources(cpu, mem)
-    requests = (Fraction(str(cpu)) if cpu is not None else sizing.TEST_SOURCE_REQUESTS[0],
-                Fraction(str(mem)) if mem is not None else sizing.TEST_SOURCE_REQUESTS[1])
+    cpu_request = Fraction(str(cpu)) if cpu is not None else sizing.TEST_SOURCE_REQUESTS[0]
+    requests = (cpu_request, Fraction(str(mem)) if mem is not None else sizing.TEST_SOURCE_REQUESTS[1],
+                sizing.test_source_cpu_limit(cpu_request))
     if res.get("gpu", {}).get("count", 0) > 0 and not ctx.facility.has("gpu"):
         report.refuse(3, where(fid, "resources.gpu"), f"facility {ctx.facility.name} has no 'gpu' capability")
     return Compiled(entry, [requests])
