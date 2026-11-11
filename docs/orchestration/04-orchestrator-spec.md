@@ -74,7 +74,7 @@ Refuse with a message naming function and parameter. Report all problems, not ju
 1. `schemaVersion`, `apiVersion`, module type and version are known.
 2. Function counts and the domain count are within the facility's `limits.functionsPerWorkload` and `limits.domainsPerWorkload`; for `local`, exactly one `switchframe.1` function (assumption 2) and one domain. Read from the profile, so the toolkit's exported copy and the compiler can't disagree.
 3. Facility capability exists for each selected input, output, feature and enum value (see [02-switchframe-options.md](02-switchframe-options.md)).
-4. `resolution` + `rate` is a real SwitchFrame format.
+4. `resolution` + `rate` is a real SwitchFrame format. 720p is refused when the design has an MXL source or `mxl-out`: at the pinned commit SwitchFrame's V210 converters (`server/mxl/v210.go`) need a width divisible by 6, and 1280 isn't, so every MXL frame fails (stage 7B). Name the format and the reason. Lift this only with a build patch that handles the remainder pixels.
 5. Every MXL source flow matches the engine: frame size, rate, `video/v210`, progressive, BT709, and `transfer` absent or SDR; audio 48 kHz float32. `dmf-mxl.2` requires 1080p29.97. Name the source, its value and the engine's value: the toolkit checks this too from stage 7A, and this catches hand-edited XML. No wire reads `mxl-out.anc`: the toolkit can't produce one, so this only catches hand-edited XML.
 6. Every required secret exists in `.state/secrets/<id>.yaml`. Stage 5 onward.
 7. No hand-written `workloads/<id>.yaml` exists for this id. The generated header is information only.
@@ -207,6 +207,8 @@ Loop: every 5 s for the first 2 minutes after start, then every 30 s:
 
 Requirements:
 - Never fails the pod and never exits on API errors. Logs as JSON. Doesn't overwrite operator changes: a setting is applied once per appearance, not every loop.
+- A call's identity is its content, so a new revision loaded without a restart applies only the calls that changed. The applied and failed sets are pruned to the current config's calls on each pass, so a value changed back to an earlier one is applied again (stage 7B review).
+- A registration timeout means the API isn't ready: retry registration, don't fall back to the bare token, which SwitchFrame answers with 403 `operator not identified` once operators exist. A 403 `operator not identified` on any call drops the operator, registers again and retries the call, rather than counting it as failed. So does a 401 on the reconciler's own operator token, which SwitchFrame returns as `invalid token` once it no longer knows that operator (`server/control/auth.go`).
 - Redacts passphrases and RTMP URLs from anything it logs, including API responses.
 - Exposes `dmf_reconcile_pending`, `dmf_reconcile_failed`, `dmf_reconcile_api_up` and `dmf_reconcile_errors_total` at `:9103/metrics`, added to the ServiceMonitor.
 - Uses the current hook's auth and retry logic as its starting point.
@@ -253,6 +255,7 @@ The archive path is fixed once per run. Before any teardown, finalise checks tha
 - Before any teardown, stop the recording, then copy `/recordings` to `.state/archive/<run>/recordings`. If the copy fails, stop before `terraform destroy` and say so. `DISCARD_RECORDINGS=1` is the deliberate override.
 - Archive `workloads/<id>.source.xml` and `<id>.config.json`.
 - Release the allocation. Remove generated workload files only after a successful destroy.
+- After a successful destroy, also remove `.state/secrets/<id>.yaml` and `.state/<id>.tfplan`, which hold secret values and are never archived. Deploying the id again then needs its secrets set again, and rule 6 says which (stage 7B review).
 
 ## Tests
 

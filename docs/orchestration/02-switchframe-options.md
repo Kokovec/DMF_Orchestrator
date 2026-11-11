@@ -26,7 +26,7 @@ at the end.
 
 | Option | Target | Stage |
 |---|---|---|
-| `resolution` + `rate` | `--format`, e.g. `1080p29.97`. Valid: 1080p at 23.976, 24, 25, 29.97, 30, 50, 59.94, 60; 720p and 2160p at 25, 29.97, 30, 50, 59.94, 60 | 4 |
+| `resolution` + `rate` | `--format`, e.g. `1080p29.97`. Valid: 1080p at 23.976, 24, 25, 29.97, 30, 50, 59.94, 60; 720p and 2160p at 25, 29.97, 30, 50, 59.94, 60. 720p doesn't work with MXL at the pinned commit (V210 needs a width divisible by 6), so it's refused with an MXL source or `mxl-out` | 4, 7 |
 | `colorProfile` | `--color-format` | 4 |
 | `frameSync` | `off`: none; `freerun`: `--frame-sync`; `source-driven`: `--low-latency-sync`. Compiler warns on `freerun` with MXL sources: this repo measured 40% of single-frame flashes lost | 4 |
 | `frameRateConversion` | `--frc-quality` | 4 |
