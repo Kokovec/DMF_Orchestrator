@@ -6,7 +6,7 @@ metadata:
   description: 'Two-camera studio with an A/V sync source: the news-studio design, expressed as a published workload.'
   uid: 5fc0d767-c67e-5091-b502-b95e1269fe8c
   revision: 1
-  libraryVersion: 4.1.0
+  libraryVersion: 4.1.1
 spec:
   resourceProfile: {cpu: '11', memory: 8Gi, gpu: 0}
   mediaExchange: {domain: full-settings, uid: 20002, gid: 20002, sizeMiB: 657}
