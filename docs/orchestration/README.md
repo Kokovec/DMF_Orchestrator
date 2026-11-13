@@ -10,6 +10,7 @@ report the contradiction and propose a change here; don't work around it silentl
 | [02-switchframe-options.md](02-switchframe-options.md) | Every SwitchFrame option: who sets it, where it goes, when it is built |
 | [03-toolkit-spec.md](03-toolkit-spec.md) | Changes to DMF Toolkit |
 | [04-orchestrator-spec.md](04-orchestrator-spec.md) | Compiler, facility profile, reconciler, chart and lifecycle changes |
+| [05-facility-console.md](05-facility-console.md) | The local web console: status, terminal and lifecycle buttons (stages 8 and 9) |
 | [prompts/](prompts/) | One self-contained Claude Code prompt per build stage |
 | [../../schemas/dmf-workload-v1.xsd](../../schemas/dmf-workload-v1.xsd) | The XML schema |
 | [../../examples/studio-a.workload.xml](../../examples/studio-a.workload.xml) | The toolkit's real output for `studio-a`, and the compiler's first golden input |
@@ -69,6 +70,8 @@ Run in order, each in a fresh Claude Code session in the named repo. Review befo
 | 5 | [5-reconciler-io.md](prompts/5-reconciler-io.md) | switchframe-dmf | Reconciler, secrets, SRT, RTMP, recording |
 | 6 | [6-remaining-settings.md](prompts/6-remaining-settings.md) | switchframe-dmf | Remaining settings wired through |
 | 7 | [7-gating-e2e.md](prompts/7-gating-e2e.md) | both | Greyed-out options, full end-to-end from the toolkit |
+| 8 | [8-console-status.md](prompts/8-console-status.md) | switchframe-dmf | Facility console: status, terminal, toolkit mount |
+| 9 | [9-console-actions.md](prompts/9-console-actions.md) | switchframe-dmf | Facility console: lifecycle buttons and deploy flow |
 
 ## Done means
 
