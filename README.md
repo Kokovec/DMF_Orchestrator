@@ -1,6 +1,6 @@
-# SwitchFrame on a local EBU DMF facility
+# DMF Orchestrator
 
-A deployment package that runs [SwitchFrame](https://github.com/mattlamb99/switchframe) as a Media Function in a local facility aligned with the **EBU Dynamic Media Facility Reference Architecture v2.0** ([white paper, 2026-04-15](https://tech.ebu.ch/publications/white-paper-2026-04-15)). It is provisioned with Terraform and configured with Ansible.
+An orchestrator for a local facility aligned with the **EBU Dynamic Media Facility Reference Architecture v2.0** ([white paper, 2026-04-15](https://tech.ebu.ch/publications/white-paper-2026-04-15)). It deploys workloads designed in DMF Toolkit and published as XML, running [SwitchFrame](https://github.com/mattlamb99/switchframe) as their Media Function, and has a local web console (`make console`) that shows the facility's state and runs its lifecycle. It is provisioned with Terraform and configured with Ansible.
 
 - **Media Exchange:** MXL SDK v1.1.0 shared memory, one isolated Flow Domain per production. Flows are registered in an NMOS IS-04 registry.
 - **Media Functions:** containerised SwitchFrame vision mixer and MXL camera sources, packaged as Helm charts.
@@ -79,14 +79,14 @@ Clone into your Linux home folder. **Not `/mnt/c`:** WSL often starts you on the
 
 ```bash
 cd ~
-git clone https://github.com/Kokovec/switchframe-dmf.git
-cd switchframe-dmf
+git clone https://github.com/Kokovec/DMF_Orchestrator.git
+cd DMF_Orchestrator
 make prereqs                      # terraform, kubectl, helm, ansible (no sudo)
 ```
 
 If the repository is private, log in first with `sudo apt-get install -y gh && gh auth login && gh auth setup-git`.
 
-The tools install into a `.tools` folder, and nothing is installed system-wide. You never need to go into that folder: run every `make` command from `~/switchframe-dmf`. Commands marked `(sudo)` below ask for your sudo password as `BECOME password:`.
+The tools install into a `.tools` folder, and nothing is installed system-wide. You never need to go into that folder: run every `make` command from `~/DMF_Orchestrator`. Commands marked `(sudo)` below ask for your sudo password as `BECOME password:`.
 
 ### 3. Build the DMF environment
 

@@ -1,6 +1,6 @@
 # Orchestrator
 
-Repo: `/home/dansi/switchframe-dmf`, distro `Ubuntu-24.04`.
+Repo: `/home/dansi/DMF_Orchestrator`, distro `Ubuntu-24.04`.
 
 ## Layout
 

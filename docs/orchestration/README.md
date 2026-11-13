@@ -18,7 +18,7 @@ report the contradiction and propose a change here; don't work around it silentl
 ## The system
 
 ```
-DMF Toolkit (design)                     switchframe-dmf (orchestrator)
+DMF Toolkit (design)                     DMF_Orchestrator (deploy)
 ─────────────────────                    ──────────────────────────────────────────────
 canvas + function dialog                 make import XML=<file|url>
   │                                        1. refuse DOCTYPE, validate against the XSD
@@ -48,8 +48,8 @@ GET /api/workloads/:id/published.xml ──►   4. write workloads/<id>.yaml + 
 
 ## Environment facts
 
-- **Two WSL distros.** Toolkit: distro `Ubuntu`, `/home/dansi/DMF_Toolkit`. Orchestrator: distro `Ubuntu-24.04`, `/home/dansi/switchframe-dmf`.
-- **Cross-distro paths:** `/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit` and `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf`. They exist only while each distro has bind-mounted itself there, which isn't automatic: both were missing on 2026-11-09. To expose a distro, run this in it, with its own name: `sudo mkdir -p /mnt/wsl/instances/<distro> && sudo mount --bind / /mnt/wsl/instances/<distro>`.
+- **Two WSL distros.** Toolkit: distro `Ubuntu`, `/home/dansi/DMF_Toolkit`. Orchestrator: distro `Ubuntu-24.04`, `/home/dansi/DMF_Orchestrator`.
+- **Cross-distro paths:** `/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit` and `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/DMF_Orchestrator`. They exist only while each distro has bind-mounted itself there, which isn't automatic: both were missing on 2026-11-09. To expose a distro, run this in it, with its own name: `sudo mkdir -p /mnt/wsl/instances/<distro> && sudo mount --bind / /mnt/wsl/instances/<distro>`.
 - **Node:** v24 under nvm in `Ubuntu` only (`~/.nvm/versions/node/v24.21.0/bin`). Not on `PATH` in non-interactive shells, and absent from `Ubuntu-24.04`.
 - **Facility:** Docker, k3s, Terraform, Helm and Ansible run in `Ubuntu-24.04`, with tools in `.tools/bin` and Python tools in `.tools/venv`. k3s is stopped until `make start`.
 - **No browser in `Ubuntu`:** the toolkit UI has been tested through a jsdom harness kept outside its repo.
@@ -65,13 +65,13 @@ Run in order, each in a fresh Claude Code session in the named repo. Review befo
 | 1 | [1-toolkit-model.md](prompts/1-toolkit-model.md) | DMF_Toolkit | Options fixed, feature toggles, test source modules |
 | 1b | [1b-toolkit-corrections.md](prompts/1b-toolkit-corrections.md) | DMF_Toolkit | Stage 1 review decisions applied, reusable fixture kept |
 | 2 | [2-toolkit-xml.md](prompts/2-toolkit-xml.md) | DMF_Toolkit | XML publish endpoint and export |
-| 3 | [3-compiler.md](prompts/3-compiler.md) | switchframe-dmf | Offline compiler with golden tests |
-| 4 | [4-deploy-parity.md](prompts/4-deploy-parity.md) | switchframe-dmf | `studio-a` runs from XML, matching `news-studio` |
-| 5 | [5-reconciler-io.md](prompts/5-reconciler-io.md) | switchframe-dmf | Reconciler, secrets, SRT, RTMP, recording |
-| 6 | [6-remaining-settings.md](prompts/6-remaining-settings.md) | switchframe-dmf | Remaining settings wired through |
+| 3 | [3-compiler.md](prompts/3-compiler.md) | DMF_Orchestrator | Offline compiler with golden tests |
+| 4 | [4-deploy-parity.md](prompts/4-deploy-parity.md) | DMF_Orchestrator | `studio-a` runs from XML, matching `news-studio` |
+| 5 | [5-reconciler-io.md](prompts/5-reconciler-io.md) | DMF_Orchestrator | Reconciler, secrets, SRT, RTMP, recording |
+| 6 | [6-remaining-settings.md](prompts/6-remaining-settings.md) | DMF_Orchestrator | Remaining settings wired through |
 | 7 | [7-gating-e2e.md](prompts/7-gating-e2e.md) | both | Greyed-out options, full end-to-end from the toolkit |
-| 8 | [8-console-status.md](prompts/8-console-status.md) | switchframe-dmf | Facility console: status, terminal, toolkit mount |
-| 9 | [9-console-actions.md](prompts/9-console-actions.md) | switchframe-dmf | Facility console: lifecycle buttons and deploy flow |
+| 8 | [8-console-status.md](prompts/8-console-status.md) | DMF_Orchestrator | Facility console: status, terminal, toolkit mount |
+| 9 | [9-console-actions.md](prompts/9-console-actions.md) | DMF_Orchestrator | Facility console: lifecycle buttons and deploy flow |
 
 ## Done means
 
