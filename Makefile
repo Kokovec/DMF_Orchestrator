@@ -26,11 +26,12 @@ PYTHON       := $(ROOT)/.tools/venv/bin/python
 TF_STACKS    := $(ROOT)/terraform/stacks
 PLAYBOOK     := cd ansible && ansible-playbook
 BECOME       ?= --ask-become-pass
+CONSOLE_PORT ?= 8090
 SKIP_PREFLIGHT ?=
 PREFLIGHT    := $(if $(SKIP_PREFLIGHT),true,scripts/preflight.sh)
 
 .PHONY: help prereqs infra hosts images platform import deploy facility-export secret-set plan provision status start stop finalise up \
-        destroy windows-browser trust-ca secrets nmos-query lint validate clean
+        destroy windows-browser trust-ca secrets nmos-query console lint validate clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n",$$1,$$2}'
@@ -110,6 +111,10 @@ secrets: ## Show admin and demo-operator credentials
 
 windows-browser: ## WSL2: open WORKLOAD's UI in Chrome on Windows (saves WSL CPU)
 	@scripts/windows-browser.sh $(WORKLOAD)
+
+console: ## Local web console on 127.0.0.1 (CONSOLE_PORT=8090): status, terminal, actions. Ctrl-C stops it
+	@$(PYTHON) -c 'import aiohttp' 2>/dev/null || { echo "aiohttp is missing: make prereqs"; exit 1; }
+	@$(PYTHON) -m tools.console --port "$(CONSOLE_PORT)" --facility "$(FACILITY)"
 
 nmos-query: ## List flows registered in the NMOS IS-04 registry
 	@kubectl -n dmf-system port-forward svc/nmos-registry 18010:8010 >/dev/null & pf=$$!; sleep 2; \

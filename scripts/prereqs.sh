@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install pinned control-node tools into ./.tools (no sudo, nothing system-wide):
 # terraform, kubectl, helm, ansible-core (+ collections), ansible-lint, yamllint, and the
-# workload compiler's Python packages (PyYAML, xmlschema).
+# workload compiler's Python packages (PyYAML, xmlschema) and the console's (aiohttp).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLS="$ROOT/.tools"
@@ -36,10 +36,11 @@ if [ ! -x "$TOOLS/venv/bin/ansible-playbook" ]; then
   python3 -m venv --without-pip "$TOOLS/venv"
   curl -fsSLo "$tmp/get-pip.py" https://bootstrap.pypa.io/get-pip.py
   "$TOOLS/venv/bin/python" "$tmp/get-pip.py" -q
-  "$TOOLS/venv/bin/pip" install -q "ansible-core>=2.17" ansible-lint yamllint PyYAML "xmlschema>=4.3,<5"
+  "$TOOLS/venv/bin/pip" install -q "ansible-core>=2.17" ansible-lint yamllint PyYAML "xmlschema>=4.3,<5" "aiohttp>=3.14,<3.15"
 fi
 # Added after the first release of this script: install into an existing venv too.
 "$TOOLS/venv/bin/python" -c 'import xmlschema' 2>/dev/null || "$TOOLS/venv/bin/pip" install -q "xmlschema>=4.3,<5"
+"$TOOLS/venv/bin/python" -c 'import aiohttp' 2>/dev/null || "$TOOLS/venv/bin/pip" install -q "aiohttp>=3.14,<3.15"
 for t in ansible ansible-playbook ansible-galaxy ansible-lint yamllint; do
   ln -sf "$TOOLS/venv/bin/$t" "$BIN/$t"
 done

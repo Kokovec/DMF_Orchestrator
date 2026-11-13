@@ -19,6 +19,9 @@ workloads share one host (docs/orchestration/README.md, assumption 3), and a
 mount reserves its size whether or not its namespace still exists.
 
 usage: capacity.py <workload.yaml> <kubeconfig> [mxl root, default /var/lib/dmf/mxl]
+       capacity.py --facility <kubeconfig> [mxl root]
+The second form prints the facility's reserved and allocatable totals, counted the same way with
+no workload being planned, and always exits 0 (tools/console shows them).
 """
 import json
 import subprocess
@@ -50,7 +53,7 @@ def other_flow_domains(mxl_root, own_domain):
     for line in out.splitlines():
         target, size = line.rsplit(" ", 1)
         target = target.replace("\\x20", " ")
-        if target.startswith(root) and target != root + own_domain:
+        if target.startswith(root) and (own_domain is None or target != root + own_domain):
             domains[target] = int(size)
     return domains
 
@@ -62,20 +65,18 @@ def load_workload(path):
         return yaml.safe_load(fh)
 
 
-def main() -> int:
-    wl = load_workload(sys.argv[1])
-    kubeconfig = sys.argv[2]
-    mxl_root = sys.argv[3] if len(sys.argv) > 3 else "/var/lib/dmf/mxl"
-    name = wl["metadata"]["name"]
-    prof = wl["spec"]["resourceProfile"]
-    shm = wl["spec"]["mediaExchange"]["sizeMiB"] * 2**20
-    domains = other_flow_domains(mxl_root, wl["spec"]["mediaExchange"]["domain"])
+def reservations(kubeconfig, mxl_root, own_ns=None, own_domain=None):
+    """What the cluster can hold and what is reserved on it, skipping own_ns and own_domain.
+
+    Returns (allocatable cpu, allocatable memory, reserved cpu, reserved memory, {other workload
+    namespace: its cpu}, {other Flow Domain mount point: its size}). Memory in bytes.
+    """
+    domains = other_flow_domains(mxl_root, own_domain)
 
     nodes = kubectl(kubeconfig, "get", "nodes")["items"]
     alloc_cpu = sum(qty(n["status"]["allocatable"]["cpu"]) for n in nodes)
     alloc_mem = sum(qty(n["status"]["allocatable"]["memory"]) for n in nodes)
 
-    own_ns = f"wl-{name}"  # skipped: re-planning an already provisioned workload replaces its reservation
     quota_cpu, live_limits_cpu = {}, {}
     reserved_cpu = reserved_mem = 0.0
     for q in kubectl(kubeconfig, "get", "resourcequota", "-A", "--field-selector", "metadata.name=dmf-reservation")["items"]:
@@ -104,6 +105,17 @@ def main() -> int:
     reserved_cpu += sum(other_cpu.values())
 
     reserved_mem += sum(domains.values())
+    return alloc_cpu, alloc_mem, reserved_cpu, reserved_mem, other_cpu, domains
+
+
+def plan(workload_file, kubeconfig, mxl_root):
+    wl = load_workload(workload_file)
+    name = wl["metadata"]["name"]
+    prof = wl["spec"]["resourceProfile"]
+    shm = wl["spec"]["mediaExchange"]["sizeMiB"] * 2**20
+    own_ns = f"wl-{name}"  # skipped: re-planning an already provisioned workload replaces its reservation
+    alloc_cpu, alloc_mem, reserved_cpu, reserved_mem, other_cpu, domains = reservations(
+        kubeconfig, mxl_root, own_ns, wl["spec"]["mediaExchange"]["domain"])
 
     need_cpu = qty(prof["cpu"])
     need_mem = qty(prof["memory"]) + shm
@@ -120,6 +132,25 @@ def main() -> int:
     }
     print(json.dumps(verdict))
     return 0 if verdict["fits"] else 1
+
+
+def facility(kubeconfig, mxl_root):
+    """The facility's totals as the plan counts them, with no workload being planned (the console)."""
+    alloc_cpu, alloc_mem, reserved_cpu, reserved_mem, other_cpu, domains = reservations(kubeconfig, mxl_root)
+    print(json.dumps({
+        "allocatable": {"cpu": alloc_cpu, "memory_gib": round(alloc_mem / 2**30, 2)},
+        "reserved": {"cpu": round(reserved_cpu, 2), "memory_gib": round(reserved_mem / 2**30, 2)},
+        "free": {"cpu": round(alloc_cpu - reserved_cpu, 2), "memory_gib": round((alloc_mem - reserved_mem) / 2**30, 2)},
+        "workloads_cpu": {ns[3:]: round(v, 2) for ns, v in other_cpu.items()},
+        "flow_domains_mib": {d.rsplit("/", 1)[1]: v // 2**20 for d, v in sorted(domains.items())},
+    }))
+    return 0
+
+
+def main() -> int:
+    if sys.argv[1:2] == ["--facility"]:
+        return facility(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "/var/lib/dmf/mxl")
+    return plan(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "/var/lib/dmf/mxl")
 
 
 if __name__ == "__main__":

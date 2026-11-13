@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facility console</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/vendor/xterm-6.0.0/xterm.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <h1>Facility console</h1>
+  <span id="conn" class="conn">connecting…</span>
+  <span id="updated" class="muted"></span>
+</header>
+
+<main class="grid">
+  <section class="panel facility" aria-labelledby="h-facility">
+    <h2 id="h-facility">Facility</h2>
+    <div class="row" id="fac-health"></div>
+    <div class="row">
+      <span id="fac-capacity" class="item"></span>
+      <span class="buttons">
+        <button disabled title="stage 9: make start NO_BROWSER=1">Start <small>stage 9</small></button>
+        <button disabled title="stage 9: make stop">Stop <small>stage 9</small></button>
+      </span>
+    </div>
+    <div class="row">
+      <span id="fac-mount" class="item"></span>
+      <button class="act" data-action="mount">Mount for toolkit</button>
+      <span id="fac-profile" class="item"></span>
+      <button class="act" data-action="export">Export profile</button>
+    </div>
+  </section>
+
+  <section class="panel workloads" aria-labelledby="h-workloads">
+    <h2 id="h-workloads">Workloads</h2>
+    <p id="wl-note" class="note"></p>
+    <ul id="wl-list" class="list"></ul>
+  </section>
+
+  <section class="panel designs" aria-labelledby="h-designs">
+    <h2 id="h-designs">Toolkit designs</h2>
+    <p id="ds-note" class="note"></p>
+    <ul id="ds-list" class="list"></ul>
+  </section>
+
+  <section class="panel archive" aria-labelledby="h-archive">
+    <h2 id="h-archive">Archive</h2>
+    <ul id="ar-list" class="list"></ul>
+  </section>
+
+  <section class="panel terminal" aria-labelledby="h-terminal">
+    <h2 id="h-terminal">Terminal <span id="running" class="muted"></span></h2>
+    <p id="term-msg" class="note" role="status"></p>
+    <div id="term"></div>
+  </section>
+</main>
+
+<dialog id="confirm">
+  <form method="dialog">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-text"></p>
+    <pre id="confirm-cmd"></pre>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button value="ok" id="confirm-ok">Run in the terminal</button>
+    </menu>
+  </form>
+</dialog>
+
+<script src="/static/vendor/xterm-6.0.0/xterm.js"></script>
+<script src="/static/vendor/addon-fit-0.11.0/addon-fit.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
