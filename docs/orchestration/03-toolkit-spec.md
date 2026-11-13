@@ -3,6 +3,8 @@
 Repo: `/home/dansi/DMF_Toolkit`, distro `Ubuntu`. Its `docs/design-rules.md` is the single source for
 its decisions: every change below updates the rule and adds a decision-log line in the same change.
 
+**Status:** all sections are built (sections 1–7 in stage 1, 2026-11-02; 9 in stage 2; 8 in stage 7A, with later product limits). Library is now `4.1.1`, `switchframe.1` still `1.1.0`. The versions below were the targets of stage 1.
+
 Target versions: library `4.0.0`, `apiVersion` `dmf-toolkit/v1alpha4`, `switchframe.1` version `1.1.0`.
 Bump the schema version if stored data changes. The database has no saved workloads.
 
