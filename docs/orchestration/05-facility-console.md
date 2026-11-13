@@ -102,6 +102,20 @@ Separate steps instead of `make deploy`, so the user reviews the plan before any
 
 A design whose id is already deployed is offered as **Update**, the same flow.
 
+Ruled in the stage 9 review (2026-11-13):
+
+- The plan summary lists the resources created, changed, replaced and destroyed, and the pods that
+  restart. It finds restarts by rendering each changed Helm release before and after with `helm
+  template` and comparing pod templates; a release whose chart files changed is listed as "may
+  restart". It can't see one restart: if provision has to mount the Flow Domain again (after a host
+  restart), it restarts every Media Function that already existed.
+- A plan starts by deleting the previous summary, so a failed plan leaves none.
+- The deploy runs in the server, not the page. Its review dialog opens in every connected browser,
+  and the first **Provision** wins: the server refuses a second. A reload keeps the deploy open, but
+  restarting the console loses it; the files stay, and the user starts the deploy again.
+- Start, Stop and Finalise are refused while a deploy is open. The server checks Finalise's typed id
+  as well as the page.
+
 ## Changes to existing code
 
 - Compiler: write `.state/last-import.json` on every `import`, refused or not.

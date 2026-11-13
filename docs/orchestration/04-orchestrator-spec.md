@@ -258,6 +258,7 @@ The archive path is fixed once per run. Before any teardown, finalise checks tha
 - Archive `workloads/<id>.source.xml` and `<id>.config.json`.
 - Release the allocation. Remove generated workload files only after a successful destroy.
 - After a successful destroy, also remove `.state/secrets/<id>.yaml` and `.state/<id>.tfplan`, which hold secret values and are never archived. Deploying the id again then needs its secrets set again, and rule 6 says which (stage 7B review).
+- After a successful destroy, also remove `.state/<id>.plan-summary.json`, the facility console's summary of the last plan (stage 9 review).
 
 ## Tests
 

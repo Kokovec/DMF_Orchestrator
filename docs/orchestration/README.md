@@ -106,6 +106,27 @@ Fixed during the run: provision restarted every Deployment straight after a firs
 
 What the run doesn't prove: the toolkit's UI in a browser; picture, sound and A/V sync as a viewer sees them; sign-in. See the checks in the stage report.
 
+## Stage 9: console result
+
+Run on 2026-11-13 from the console in a browser, as the README runbook does it by hand, with a
+throwaway workload needing one SRT passphrase. The design and its revision were created through the
+toolkit's HTTP API, not its UI. Every action ran from a button; only sudo passwords and the secret
+value were typed in the terminal.
+
+| Step | Result |
+|---|---|
+| Finalise the deployed workload | Archived, namespace gone, allocation released |
+| Deploy | The import was refused on exactly the one missing secret. After it was set: re-import, plan, review (28 to add, capacity fits), provision. On air at revision 1 |
+| Settings-only revision, Update | The designs panel showed the newer revision. Review: 2 in-place changes, no restarts. After provision: the same pods, with no restarts, and the label at 2 |
+| Stop, Start | Stopped showed "deployed, stopped (Flow Domain unit)"; Start chose the only deployed workload. Back on air |
+| Finalise, Redeploy from the archive | The secret was asked for again; the review showed revision 2. On air |
+| Restore | The throwaway workload finalised and its design deleted. The original workload redeployed from its archive with the same uid and ports, on air. Its SwitchFrame runtime state was not carried over; it stays in the archive |
+
+Fixed during the run: the restart check read Terraform's `[false]` unknown-mask as unknown and said
+"may restart" for a settings-only change; a review dialog stayed open in another browser after the
+deploy moved on; the Finalise dialog described the playbook's steps in the wrong order. Finalise now
+also deletes the plan summary.
+
 ## Contradictions found, with proposed changes
 
 1. **720p doesn't work with MXL.** At the pinned commit, SwitchFrame's 8-bit V210 converters (`server/mxl/v210.go`, `V210ToYUV420pInto` and `YUV420pToV210Into`) refuse a width not divisible by 6, and 1280 isn't, so every MXL source frame and the MXL programme output fail at 720p. [02-switchframe-options.md](02-switchframe-options.md) lists 720p as valid. **Ruled 2026-11-11:** compile rule 4 refuses 720p when the design has an MXL source or `mxl-out`, and the toolkit refuses the same as a product limit, until a build patch handles the remainder pixels.
