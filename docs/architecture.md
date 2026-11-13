@@ -18,7 +18,8 @@ How SwitchFrame is deployed onto the six DMF layers, and which tool owns each la
  Host Platform        Ubuntu 24.04: hardening, sysctl, auditd, PTP/NTP       ansible/roles/{host_baseline,timing,mxl_host}
  Infrastructure       this machine (WSL2/bare metal) or KVM VMs (libvirt)    terraform/stacks/infrastructure-*
  ───────────────────  ────────────────────────────────────────────────────  ─────────────────────────────
- Verticals            Orchestration: Terraform + Ansible │ Control: SwitchFrame API/UI
+ Verticals            Orchestration: Terraform + Ansible, driven by make or the facility console
+                      Control: SwitchFrame API/UI
                       Monitoring: Prometheus, Alertmanager, Grafana, Loki │ Security: Keycloak, PKI, policy
 ```
 
@@ -94,6 +95,16 @@ Every 5 s for two minutes after start, then every 30 s, it:
 Calls are remembered by their content, pruned to the current config on every pass. When a new revision changes only the config, the ConfigMap is updated in place, nothing restarts, and the reconciler applies only the calls that changed, within about two minutes (the kubelet's ConfigMap sync); a value changed back to an earlier one is applied again. Unchanged settings aren't sent again, so an operator's live change to them stands. When SwitchFrame restarts, the reconciler notices and applies everything again.
 
 Commands need an identified operator once any operator exists. If registration doesn't answer (a first start busy writing ST-map tables), SwitchFrame isn't ready: the reconciler sends nothing and tries again next loop, rather than fall back to the bare API token. If a call comes back 403 `operator not identified`, or 401 on the reconciler's own operator token, it registers again and retries the call once. It never exits on API errors, and it redacts passphrases, stream keys and the API token from its logs.
+
+## Running the lifecycle from a page: the facility console
+
+`tools/console/` (`make console`) is a small aiohttp server on `127.0.0.1` with a page that shows the facility and runs its lifecycle. `make` stays the only implementation: every button types its `make` command into one bash PTY that the page shows with xterm.js. That's also where sudo and `make secret-set` prompt, so the console never handles a password or a secret value.
+
+- **Status** is polled every 5 s without sudo, each check with its own timeout: k3s, Kubernetes, the Keycloak probe through the ingress, the NMOS registry pod, `ansible/scripts/capacity.py` (the numbers `make plan` uses), the toolkit bind mount, the exported profile, the toolkit's API, and `.state/archive/`. A workload's deployed revision is its namespace's `dmf.ebu.ch/revision` label, which Terraform sets from the compiled header. On air comes from the reconciler's metrics.
+- **Deploy** runs in the server as separate steps rather than `make deploy`, so the plan is reviewed first: `make import` (which writes `.state/last-import.json`), `make secret-set` for each missing secret, `make plan` (which writes `.state/<id>.plan-summary.json`, with restarts found by comparing `helm template` pod templates before and after), a review in the page, then `make provision`. Neither file holds secret values.
+- **Access**: a random token per start, held in an `HttpOnly`, `SameSite=Strict` cookie, plus an `Origin` check on the WebSocket and every non-GET request. Terminal output is kept in memory only.
+
+The design and its decisions are in [orchestration/05-facility-console.md](orchestration/05-facility-console.md).
 
 ## Naming and identities
 

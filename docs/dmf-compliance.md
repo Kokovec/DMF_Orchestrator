@@ -102,8 +102,8 @@ Status key: **Met**: implemented as the RA describes. **Partial**: implemented w
 
 | Vertical | Summary |
 |---|---|
-| Orchestration (IaC) | Terraform for Infrastructure, Container Platform services and workloads; Ansible for hosts and lifecycle sequencing. All declarative and re-runnable. |
-| Control | SwitchFrame UI/API; MXL connections set at CONFIGURE; `make status`. |
+| Orchestration (IaC) | Terraform for Infrastructure, Container Platform services and workloads; Ansible for hosts and lifecycle sequencing. All declarative and re-runnable. The facility console (`make console`) runs the same `make` targets from a web page, with a plan review before provision. |
+| Control | SwitchFrame UI/API; MXL connections set at CONFIGURE; `make status`; the facility console's status panels (facility health, capacity, workload states, toolkit designs, archive). |
 | Monitoring | Per-layer alerts (`charts/dmf-platform-config/templates/alerts.yaml`) labelled `dmf_layer`, and the **DMF / Media Workloads** Grafana dashboard. |
 | Security | Zero-trust segmentation (namespaces + default-deny), least privilege (non-root, read-only root FS, drop ALL, seccomp), AAA (Keycloak, oauth2-proxy, k8s audit, auditd), TLS 1.3 at every external edge. |
 

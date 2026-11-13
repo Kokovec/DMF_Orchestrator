@@ -1,6 +1,6 @@
 # DMF Orchestrator
 
-An orchestrator for a local facility aligned with the **EBU Dynamic Media Facility Reference Architecture v2.0** ([white paper, 2026-04-15](https://tech.ebu.ch/publications/white-paper-2026-04-15)). It deploys workloads designed in DMF Toolkit and published as XML, running [SwitchFrame](https://github.com/mattlamb99/switchframe) as their Media Function, and has a local web console (`make console`) that shows the facility's state and runs its lifecycle. It is provisioned with Terraform and configured with Ansible.
+An orchestrator for a local facility aligned with the **EBU Dynamic Media Facility Reference Architecture v2.0** ([white paper, 2026-04-15](https://tech.ebu.ch/publications/white-paper-2026-04-15)). It deploys workloads designed in DMF Toolkit and published as XML, running [SwitchFrame](https://github.com/mattlamb99/switchframe) as their Media Function, and has a local web console (`make console`, see [Facility console](#facility-console)) that shows the facility's state and runs its lifecycle. It is provisioned with Terraform and configured with Ansible.
 
 - **Media Exchange:** MXL SDK v1.1.0 shared memory, one isolated Flow Domain per production. Flows are registered in an NMOS IS-04 registry.
 - **Media Functions:** containerised SwitchFrame vision mixer and MXL camera sources, packaged as Helm charts.
@@ -158,6 +158,8 @@ On WSL the facility does not start with WSL, so run `make start` after each WSL 
 
 `make stop` is for pausing: the production comes back on `make start`. `make finalise` removes the production for good, and needs the facility running, so don't `make stop` first.
 
+`make console` opens the same actions as buttons in a web page, with the facility's state next to them. See [Facility console](#facility-console).
+
 ### If something goes wrong
 
 | Symptom | Cause and fix |
@@ -278,6 +280,8 @@ Things to know:
 
 Use this to go from whatever is running to one workload built from a DMF Toolkit design, the same way every time. Run the commands from this repo's checkout unless a step says otherwise. Replace everything in `<angle brackets>`. Don't type the brackets: bash reads `<` as a file redirect.
 
+The [facility console](#facility-console) runs the same steps from buttons and shows the plan for review before provisioning. These are the commands it types.
+
 Values used below:
 
 | Placeholder | What it is | Where to find it |
@@ -379,6 +383,78 @@ Problems you can hit on the way:
 | The plan names a missing secret | Step 5 |
 | Stutter or drop-outs in the first minutes | The first-start cache write. Wait for it to finish, then reload the page |
 
+## Facility console
+
+The facility console is a web page on this machine that shows the state of the facility and runs its lifecycle from buttons: start and stop, deploy or update a toolkit design, finalise a workload and redeploy one from the archive. Each button types the matching `make` command into a terminal shown on the page. The console does nothing you couldn't type yourself, and you see every command and its output.
+
+### Start it
+
+```bash
+make console                      # or: make console CONSOLE_PORT=8091
+```
+
+It prints a link like `http://localhost:8090/?token=…`. Open that exact link. On WSL, open it in Chrome on Windows: WSL forwards `localhost` to Windows.
+
+- **It listens on `127.0.0.1` only.** Every request needs the token in the link. Your browser keeps it in a cookie after the first load, so you can then use `http://localhost:8090/`. The address must be `localhost` or `127.0.0.1`: the console refuses other host names. The token changes every time the console starts, so after a restart open the new link. A browser without the current token gets "Open the URL make console printed".
+- **Ctrl-C stops it,** along with its terminal. It's not a service, so run `make console` again after a WSL restart. It doesn't need the facility running, and it shows what's down.
+- **There is one console and one terminal.** A second browser tab or window shows the same terminal, and the same deploy.
+
+### What the page shows
+
+Status refreshes every 5 seconds. A check that fails shows as unknown with its error, and the rest of the page keeps working.
+
+| Panel | Shows | Buttons |
+|---|---|---|
+| **Facility** | k3s, Kubernetes, Keycloak and the NMOS registry. Reserved CPU and memory against what the host has, the same numbers `make plan` uses. Whether this distro is bind-mounted for the toolkit, and whether the facility profile is exported and up to date | **Start**, **Stop**, **Mount for toolkit**, **Export profile** |
+| **Workloads** | Every workload: state, hand-written or compiled, revision, pods ready, reserved CPU | **Open UI**, **Status**, **Deploy** or **Update**, **Finalise** |
+| **Toolkit designs** | The profile the toolkit server loaded (or a warning that it has none), then each design's latest revision: publishable, or its problems. A deployed design says which revision is deployed and whether a newer one is waiting | **Deploy**, or **Update** for one that's deployed |
+| **Archive** | Each finalised run in `.state/archive/`, with its time | **Redeploy** |
+| **Deploy** | Appears while a deploy runs: its steps (Import, Secrets, Plan, Review, Provision) and where it is | Depends on the step |
+| **Terminal** | A real bash shell in this repo. Buttons type into it, and you can type into it too | |
+
+A workload is in one of these states:
+
+| State | Means |
+|---|---|
+| designed | In the toolkit only |
+| compiled | Compiled into `workloads/generated/` but not deployed |
+| deployed, stopped | Deployed, but its pods aren't ready, for example after **Stop**. While Kubernetes is down, the row says it found the workload's Flow Domain mount unit |
+| running | Pods ready |
+| ON AIR | Running, and the reconciler has applied every setting |
+| running, N settings failed | The reconciler couldn't apply N settings. The log of the `reconciler` container in the SwitchFrame pod names them |
+
+### Deploy a toolkit design
+
+This is the [runbook](#runbook-clear-the-facility-and-deploy-a-toolkit-design) from buttons. Before you start:
+
+1. Start the console and press **Start** if the facility is down.
+2. Remove what's deployed: **Finalise** on each compiled workload (one fits on a 16-CPU host).
+3. Press **Mount for toolkit** if the toolkit runs in another WSL distro, and **Export profile**. Then start the toolkit server in its own distro, as in runbook step 3. The console doesn't start it; it shows "not reachable" until the server answers on `localhost:3001`.
+4. Design and publish in the toolkit, following runbook step 4.
+
+Then press **Deploy** on the design in **Toolkit designs**. The Deploy panel takes it through these steps:
+
+1. **Import.** `make import` compiles the published XML. If the design has problems other than missing secrets, the panel lists each one with its rule number and stops. Fix the design in the toolkit, publish, and deploy again.
+2. **Secrets.** For each secret the design needs (SRT passphrases, RTMP stream keys), press **Set *name* in the terminal** and type the value at the terminal's prompt, twice. It isn't shown. The console then imports again.
+3. **Plan.** `make plan` runs. A failed plan can be run again from the panel.
+4. **Review.** A dialog shows what the plan changes: resources created, changed in place, replaced and destroyed; the pods that restart; the capacity check; the allocation (UID, ports, hostname); and the import's warnings. Press **Provision** to go ahead, **Not now** to close the dialog and keep the deploy open (**Review the plan** reopens it), or **Cancel the deploy**.
+5. **Provision.** `make provision` runs. sudo asks for your password in the terminal.
+
+When it's done, press **Open UI** on the workload and sign in as in [Open it](#5-open-it).
+
+- **To change a deployed design,** publish a new revision in the toolkit, then press **Update**. It's the same flow, and the review shows what restarts. A settings-only change restarts nothing.
+- **To bring back a finalised workload,** press **Redeploy** on its archive entry. Finalise deleted its secrets, so the deploy asks for them again. A workload with the same id must be finalised first.
+
+### Good to know
+
+- **One command at a time.** While a button's command runs, the other buttons are disabled. You can still type in the terminal. If you're partway through typing a line, the console asks you to clear it instead of typing over it.
+- **Hover over a button to see the exact command it runs.** Its confirmation shows the command too. Finalise asks you to type the workload id.
+- **sudo passwords and secret values are typed only in the terminal.** The console never sees or stores them, and never writes terminal output to disk. It keeps the last 2,000 lines in memory, so reloading the page brings the terminal back. Restarting the console clears them.
+- **A deploy runs in the console server, not in the page.** Reloading keeps it. The review dialog opens in every browser showing the console, and the first **Provision** wins. Stopping the console loses an open deploy, but the files stay, so press **Deploy** again.
+- **Start, Stop and Finalise are refused while a deploy is open.** Finish or cancel it first.
+- **Some things have no button.** `make secrets`, `make platform`, `make images` and the other setup targets stay in the terminal: type them there.
+- **"deployed (revision not labelled)"** means the workload was provisioned before the console's revision label existed. Its next provision adds the label.
+
 ## What's in the box
 
 ```
@@ -387,6 +463,7 @@ workloads/                   DESIGN: one MediaWorkload file per production
 schemas/dmf-workload-v1.xsd  the XML handover format (DMF Toolkit keeps a byte-identical copy)
 facility/local.yaml          what this facility can run: capabilities, ports, UID range, limits
 tools/dmf_compile/           compiler: published XML + facility profile → workload YAML + reconciler config
+tools/console/               facility console (make console): status, terminal, lifecycle buttons, deploy flow
 scripts/workload-file.sh     resolves a workload id to its file; used by every reader
 terraform/stacks/
   infrastructure-localhost   Infrastructure: existing host(s) → Ansible inventory
@@ -432,6 +509,7 @@ Three more patches fix timing defects found with the `sync` source (`mxl-syncsrc
 
 | Task | Command |
 |---|---|
+| Facility state and lifecycle in a web page | `make console` |
 | Status across layers | `make status WORKLOAD=news-studio` |
 | Flows in the NMOS registry | `make nmos-query` |
 | Credentials | `make secrets` |

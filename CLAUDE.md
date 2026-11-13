@@ -22,6 +22,7 @@ Orchestrates a local EBU DMF-aligned k3s facility: deploys workloads published a
 | `make start\|stop [WORKLOAD=<id>]` | Start or stop the whole facility. Default workload is `news-studio` |
 | `make images` | Rebuild images and load them into k3s. Slow, so run it in the background. Needs sudo |
 | `make secret-set WORKLOAD=<id> NAME=<name>` | Set a workload secret |
+| `make console [CONSOLE_PORT=8090]` | Facility console on `127.0.0.1`: status, a terminal, lifecycle buttons. Spec: `docs/orchestration/05-facility-console.md`. Tests: `tools/console/tests/` |
 
 Faster test loops:
 
