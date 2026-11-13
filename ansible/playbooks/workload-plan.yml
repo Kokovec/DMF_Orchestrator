@@ -27,6 +27,20 @@
           - dmf_workload.spec.access.hostname is match('^[a-z0-9.-]+$')
         fail_msg: "{{ workload_file }} is not a valid MediaWorkload design"
 
+    # Every check below asks the cluster. Without this, a stopped facility shows up as kubectl's
+    # "connection refused" on the first of them.
+    - name: Check that the facility is running
+      ansible.builtin.command: kubectl --kubeconfig {{ dmf_kubeconfig }} get ns -o name
+      register: cluster_up
+      changed_when: false
+      failed_when: false
+
+    - name: Require a running facility
+      ansible.builtin.assert:
+        that: cluster_up.rc == 0
+        fail_msg: "The facility is not running (Kubernetes doesn't answer). Run: make start NO_BROWSER=1, then plan again."
+        quiet: true
+
     - name: Check that uid/domain/ports are not used by another provisioned workload
       ansible.builtin.command: >-
         kubectl --kubeconfig {{ dmf_kubeconfig }} get ns -l dmf.ebu.ch/workload!={{ workload }},dmf.ebu.ch/workload
@@ -89,22 +103,55 @@
         state: directory
         mode: "0700"
 
-    - name: Terraform plan in workspace {{ workload }}
-      community.general.terraform:
-        project_path: "{{ dmf_terraform_dir }}/workload"
-        workspace: "{{ workload }}"
-        state: planned
-        plan_file: "{{ dmf_state_dir }}/{{ workload }}.tfplan"
-        force_init: true
-        variables:
-          workload_file: "{{ workload_file }}"
-          kubeconfig: "{{ dmf_kubeconfig }}"
-          charts_dir: "{{ dmf_repo_root }}/charts"
-          image_tag: "{{ dmf_image_tag }}"
-          secrets_file: "{{ dmf_state_dir }}/secrets/{{ workload }}.yaml"
-          image_ids_file: "{{ dmf_state_dir }}/image-ids.json"
-      register: tfplan
-      check_mode: false
+    # Terraform's Keycloak provider logs in while planning. Straight after k3s starts Keycloak
+    # answers 503 for a minute or two, which otherwise fails the plan.
+    - name: Wait for Keycloak (Terraform reads users and creates the SSO client in it)
+      ansible.builtin.uri:
+        url: "https://keycloak.{{ dmf_base_domain | default('dmf.test') }}/realms/master/.well-known/openid-configuration"
+        validate_certs: false
+      register: keycloak_ready
+      retries: 60
+      delay: 5
+      until: keycloak_ready.status == 200
+
+    - name: Terraform plan
+      block:
+        - name: Terraform plan in workspace {{ workload }}
+          community.general.terraform:
+            project_path: "{{ dmf_terraform_dir }}/workload"
+            workspace: "{{ workload }}"
+            state: planned
+            plan_file: "{{ dmf_state_dir }}/{{ workload }}.tfplan"
+            force_init: true
+            variables:
+              workload_file: "{{ workload_file }}"
+              kubeconfig: "{{ dmf_kubeconfig }}"
+              charts_dir: "{{ dmf_repo_root }}/charts"
+              image_tag: "{{ dmf_image_tag }}"
+              secrets_file: "{{ dmf_state_dir }}/secrets/{{ workload }}.yaml"
+              image_ids_file: "{{ dmf_state_dir }}/image-ids.json"
+          register: tfplan
+          check_mode: false
+      rescue:
+        # A name in spec.access.members that Keycloak doesn't know fails data.keycloak_user, with
+        # Terraform's whole plan around the error. Say which name, and what to do.
+        - name: Name access members that aren't Keycloak users
+          vars:
+            missing: >-
+              {{ (ansible_failed_result.msg | default(''))
+                 | regex_findall('keycloak_user[.]member[[].([^]"]+).[]]') | unique }}
+          ansible.builtin.fail:
+            msg: >-
+              Access role member{{ 's' if missing | length > 1 else '' }} {{ missing | join(', ') }}
+              {{ 'are not users' if missing | length > 1 else 'is not a user' }} in Keycloak's dmf realm.
+              Name an existing user in the design's access roles, in lower case (make platform creates
+              the users in its operators variable, by default director1, audio1, graphics1 and viewer1),
+              then publish and deploy again.
+          when: missing | length > 0
+
+        - name: Terraform plan failed
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('Terraform plan failed') }}"
 
     - name: Keep the plan file private (it holds the workload's secret values)
       ansible.builtin.file:

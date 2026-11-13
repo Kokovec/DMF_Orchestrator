@@ -32,6 +32,8 @@ Stdlib plus `xmlschema` and PyYAML. Add `xmlschema` to the pip line in `scripts/
 | `make facility-export [FACILITY=local]` | Writes `.state/facility-<name>.json` for the toolkit |
 | `make secret-set WORKLOAD=<id> NAME=<name>` | Prompts without echo; writes `.state/secrets/<id>.yaml`, mode 600 |
 | `make start WORKLOAD=<id>` | Also waits for Keycloak and the workload's SSO gateway to answer before opening Chrome. Otherwise the first login after a cold start gets "no available server", then a 500 on the callback |
+| `make start` (no `WORKLOAD`) | Starts the only deployed workload. With none deployed it starts the facility, waits for Keycloak and exits 0; with several it lists them and exits 0. A default of `news-studio` failed once that was finalised |
+| `make plan` | Also: says the facility isn't running when Kubernetes doesn't answer; waits up to 5 minutes for Keycloak before Terraform, which logs in to it while planning; and names any access-role member that isn't a Keycloak user, instead of Terraform's error |
 
 ## Facility profile
 

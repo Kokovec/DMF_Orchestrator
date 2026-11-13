@@ -3,6 +3,8 @@
 # with the host, so WSL stays free for other work until you ask for it.
 #
 # usage: scripts/facility.sh start|stop [workload]
+# start with no workload: the only deployed workload. With none deployed, start brings up the
+# facility and waits for sign-in; with several, it brings up the facility and lists them.
 # On WSL, start also opens the UI in Chrome on Windows, with its DevTools port
 # (Windows localhost only) for diagnostics. NO_BROWSER=1 skips this;
 # DMF_CHROME_DEBUG_PORT changes the port (default 9333).
@@ -10,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="$ROOT/.tools/bin:$PATH" KUBECONFIG="$ROOT/.state/kubeconfig"
 ACTION="${1:?usage: $0 start|stop [workload]}"
-WORKLOAD="${2:-news-studio}"
+WORKLOAD="${2:-}"
 NS="wl-$WORKLOAD"
 SERVICE=k3s
 systemctl cat k3s >/dev/null 2>&1 || SERVICE=k3s-agent
@@ -20,14 +22,20 @@ systemctl cat k3s >/dev/null 2>&1 || SERVICE=k3s-agent
 # on the callback. So wait for them through the ingress, as the browser will reach them: Keycloak's
 # realm (terraform/stacks/platform/identity.tf) must serve its discovery document, and the
 # gateway's /sso/login must redirect to that realm's login page, which must load.
+# With no workload file, only Keycloak is waited for, on the base domain DMF_BASE_DOMAIN
+# (default dmf.test, as in the Ansible inventory).
 wait_for_sso() {
-  local host domain ip kc ca step got login
-  host=$(awk '/^ *hostname:/ {print $2; exit}' "$1")
-  if [ -z "$host" ]; then
-    echo "$1 has no access.hostname, so there's no sign-in to wait for."
-    return 0
+  local host="" domain ip kc ca step got login
+  if [ -n "${1:-}" ]; then
+    host=$(awk '/^ *hostname:/ {print $2; exit}' "$1")
+    if [ -z "$host" ]; then
+      echo "$1 has no access.hostname, so there's no sign-in to wait for."
+      return 0
+    fi
+    domain="${host#*.}"
+  else
+    domain="${DMF_BASE_DOMAIN:-dmf.test}"
   fi
-  domain="${host#*.}"
   kc="https://keycloak.$domain/realms/dmf"
   # The same address windows-browser.sh maps *.<domain> to.
   ip=$(kubectl -n kube-system get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
@@ -39,10 +47,18 @@ wait_for_sso() {
     curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 5 "${ca[@]}" \
       --resolve "${h%%/*}:443:$ip" "$1" 2>/dev/null || true
   }
-  echo "Waiting for sign-in: Keycloak and the $host SSO gateway..."
+  if [ -n "$host" ]; then
+    echo "Waiting for sign-in: Keycloak and the $host SSO gateway..."
+  else
+    echo "Waiting for sign-in: Keycloak..."
+  fi
   for _ in $(seq 1 100); do
     step="Keycloak ($kc)"
     got=$(probe "$kc/.well-known/openid-configuration")
+    if [ "${got%% *}" = 200 ] && [ -z "$host" ]; then
+      echo "Sign-in is ready."
+      return 0
+    fi
     if [ "${got%% *}" = 200 ]; then
       step="SSO gateway (https://$host/sso/login)"
       got=$(probe "https://$host/sso/login")
@@ -59,8 +75,10 @@ wait_for_sso() {
     sleep 3
   done
   echo "Sign-in isn't ready after 5 minutes: $step answered '${got%% *}' through the ingress at $ip." >&2
-  echo "Check: kubectl -n dmf-identity get pods; kubectl -n $NS get pods" >&2
-  echo "The facility and $WORKLOAD are up; Chrome wasn't opened. When sign-in answers: make windows-browser WORKLOAD=$WORKLOAD" >&2
+  echo "Check: kubectl -n dmf-identity get pods${host:+; kubectl -n $NS get pods}" >&2
+  if [ -n "$host" ]; then
+    echo "The facility and $WORKLOAD are up; Chrome wasn't opened. When sign-in answers: make windows-browser WORKLOAD=$WORKLOAD" >&2
+  fi
   return 1
 }
 
@@ -70,7 +88,30 @@ start)
   sudo systemctl start "$SERVICE"
   # Straight after a start the API server may not answer yet: only its own NotFound is an answer.
   for i in $(seq 1 60); do
-    if out=$(kubectl get namespace "$NS" -o name 2>&1); then
+    if [ -z "$WORKLOAD" ] && out=$(kubectl get namespaces -l dmf.ebu.ch/workload \
+        -o jsonpath='{range .items[*]}{.metadata.labels.dmf\.ebu\.ch/workload}{" "}{end}' 2>&1); then
+      read -r -a deployed <<<"$out"
+      case "${#deployed[@]}" in
+        0)
+          echo "The facility is up. No workload is deployed."
+          wait_for_sso "" || exit 1
+          echo "Deploy one with: make deploy XML=<published XML url or file>"
+          exit 0
+          ;;
+        1)
+          WORKLOAD="${deployed[0]}"
+          NS="wl-$WORKLOAD"
+          echo "Starting $WORKLOAD, the only deployed workload."
+          ;;
+        *)
+          echo "The facility is up. Deployed workloads: ${deployed[*]}"
+          wait_for_sso "" || exit 1
+          echo "Open one with: make start WORKLOAD=<one of those>"
+          exit 0
+          ;;
+      esac
+    fi
+    if [ -n "$WORKLOAD" ] && out=$(kubectl get namespace "$NS" -o name 2>&1); then
       break
     fi
     case "$out" in

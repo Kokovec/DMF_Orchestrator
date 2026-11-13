@@ -83,8 +83,8 @@ provision: ## PROVISION + CONFIGURE: Flow Domain, Media Functions, connections
 status: ## MONITOR: one-shot status across layers
 	$(PLAYBOOK) playbooks/workload-status.yml -e workload=$(WORKLOAD)
 
-start: ## Start the facility, wait for WORKLOAD and open Chrome (WSL; NO_BROWSER=1 skips it)
-	@scripts/facility.sh start $(WORKLOAD)
+start: ## Start the facility, wait for WORKLOAD (default: the only deployed one) and open Chrome (WSL; NO_BROWSER=1 skips it)
+	@scripts/facility.sh start $(if $(filter command line environment,$(origin WORKLOAD)),$(WORKLOAD))
 
 stop: ## Stop the facility and release its memory, leaving WSL free for other work
 	@scripts/facility.sh stop $(WORKLOAD)

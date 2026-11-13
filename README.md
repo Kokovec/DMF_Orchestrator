@@ -282,44 +282,28 @@ Values used below:
 
 | Placeholder | What it is | Where to find it |
 |---|---|---|
-| `<id>` | The workload's id in the toolkit | Step 5 |
+| `<id>` | The workload's id in the toolkit | Step 4 |
 | `<old-id>` | A workload deployed earlier | Step 1 |
 | `<user>` | A Keycloak user to give a role | `director1`, `audio1`, `graphics1` or `viewer1`, which `make platform` creates. Passwords: `make secrets` |
 | `<repo>` | Absolute path of this checkout | `pwd` in this directory |
 
-**1. See what's running.** k3s may be stopped (for example after a WSL restart or `make stop`):
+**1. Start the facility and see what's deployed.**
 
 ```bash
-systemctl is-active k3s                      # "active" or "inactive"
-ls workloads/generated/                      # compiled workloads this checkout deployed
+make start NO_BROWSER=1
 ```
 
-If k3s is inactive, start it and wait until Kubernetes answers. `make start` also starts it, but it waits for a workload that is already deployed, so with none it stops with "not deployed". That message is harmless.
+With nothing deployed, this starts k3s, waits for sign-in to answer, and says so. With one workload deployed it starts that one. With several it lists them. Skip it if the facility is already running.
 
-```bash
-sudo systemctl start k3s
-until .tools/bin/kubectl --kubeconfig .state/kubeconfig get ns >/dev/null 2>&1; do sleep 3; done
-.tools/bin/kubectl --kubeconfig .state/kubeconfig get ns -l dmf.ebu.ch/workload \
-  -o jsonpath='{range .items[*]}{.metadata.labels.dmf\.ebu\.ch/workload}{"\n"}{end}'   # deployed workloads
-```
-
-**2. Remove what's deployed.** Only one compiled workload fits on a 16-CPU host, so finalise each one listed (sudo). This archives its design, logs, state and recordings to `.state/archive/<old-id>-<time>/`, then deletes it, **including its volumes**. Its secrets have to be set again if you deploy it later.
+**2. Remove what's deployed.** Only one compiled workload fits on a 16-CPU host, so finalise each one that step 1 named (sudo). This archives its design, logs, state and recordings to `.state/archive/<old-id>-<time>/`, then deletes it, **including its volumes**. Its secrets have to be set again if you deploy it later.
 
 ```bash
 make finalise WORKLOAD=<old-id>
 ```
 
-Finalise needs the facility running, so don't `make stop` before it. To pause a workload instead of removing it, use `make stop` and skip to step 3. It then still holds its CPU, and a second compiled workload won't fit.
+Finalise needs the facility running, so don't `make stop` before it. To pause a workload instead of removing it, use `make stop` and come back to it later. It still holds its CPU, so a second compiled workload won't fit while it's deployed.
 
-**3. Wait for sign-in.** Keycloak takes a minute or two after k3s starts. A plan run before it's ready fails with `503 Service Unavailable` from `keycloak.dmf.test`.
-
-```bash
-until curl -sk -o /dev/null -w '%{http_code}' \
-  https://keycloak.dmf.test/realms/dmf/.well-known/openid-configuration | grep -q 200; do sleep 5; done
-echo "Keycloak is ready"
-```
-
-**4. Start the toolkit with this facility's profile.** In this repo, write the profile:
+**3. Start the toolkit with this facility's profile.** In this repo, write the profile:
 
 ```bash
 make facility-export                         # writes .state/facility-local.json
@@ -339,9 +323,9 @@ sudo mkdir -p /mnt/wsl/instances/<this distro's name> && sudo mount --bind / /mn
 
 Check from this repo that the API answers: `curl -s http://localhost:3001/api/library >/dev/null && echo up`.
 
-**5. Design and publish in the toolkit.**
+**4. Design and publish in the toolkit.**
 
-- Name each person in the Workload panel's access roles by an existing Keycloak `<user>`, in lower case. A director is required. A name Keycloak doesn't know fails the plan with an error from `data.keycloak_user`.
+- Name each person in the Workload panel's access roles by an existing Keycloak `<user>`, in lower case. A director is required. A name Keycloak doesn't know fails the plan, which names it.
 - Use 1080p, or 2160p if it fits. 720p is refused with MXL.
 - Leave **Control API** as `none` and **NMOS registration** as `does not register` on the Setup tab. The deployment sets its own API, and the flow agent registers the MXL flows.
 - Leave the Switchframe settings box as `{}`. Use the feature toggles and tabs instead of `extraArgs`.
@@ -353,14 +337,14 @@ Find the id:
 curl -s http://localhost:3001/api/workloads | python3 -m json.tool | grep '"id"'
 ```
 
-**6. Compile and set secrets.** Compiling first lists any secrets the design needs (SRT passphrases, RTMP stream keys) without changing anything:
+**5. Compile and set secrets.** Compiling first lists any secrets the design needs (SRT passphrases, RTMP stream keys) without changing anything:
 
 ```bash
 make import XML=http://localhost:3001/api/workloads/<id>/published.xml
 make secret-set WORKLOAD=<id> NAME=<secret name>    # once per secret it names; prompted, not echoed
 ```
 
-**7. Deploy** (sudo for provision):
+**6. Deploy** (sudo for provision):
 
 ```bash
 make deploy XML=http://localhost:3001/api/workloads/<id>/published.xml
@@ -368,7 +352,7 @@ make deploy XML=http://localhost:3001/api/workloads/<id>/published.xml
 
 The first start of a workload writes about 16 GiB of ST-map tables to its `/cache` volume, which takes a few minutes. Until it finishes, the picture stutters and MXL sources can drop out. Later starts reuse the tables.
 
-**8. Open it and sign in.**
+**7. Open it and sign in.**
 
 ```bash
 make windows-browser WORKLOAD=<id>           # on WSL; elsewhere open https://<id>.dmf.test/sso/login
@@ -378,21 +362,21 @@ Sign in as the `<user>` you gave the director role. Then check it as in [Check t
 
 **Repeating it.**
 
-- **A changed design:** save and publish a new revision in the toolkit, then run step 7 again. Only what changed restarts.
-- **After a WSL restart or `make stop`:** run `make start WORKLOAD=<id>`. It starts k3s, waits for sign-in and opens the browser.
-- **Starting over:** finalise (step 2) and run steps 3 to 8 again.
+- **A changed design:** save and publish a new revision in the toolkit, then run step 6 again. Only what changed restarts.
+- **After a WSL restart or `make stop`:** run `make start`. It starts k3s and the only deployed workload, waits for sign-in and opens the browser. Name it with `WORKLOAD=<id>` when more than one is deployed.
+- **Starting over:** finalise (step 2) and run steps 3 to 7 again.
 - **A finalised design:** deploy it again from its archive with `make deploy XML=.state/archive/<id>-<time>/source.xml`, setting its secrets again first. Its flow IDs come from the design, so they stay the same. Its UID and ports are allocated afresh: the lowest free values.
 
 Problems you can hit on the way:
 
 | Symptom | Cause and fix |
 |---|---|
-| `bash: id: No such file or directory` | `<id>` was typed literally. Use the real id from step 5 |
-| `connection to the server 127.0.0.1:6443 was refused` | k3s isn't running. Step 1 |
-| `failed to perform initial login to Keycloak ... 503` | Keycloak isn't ready yet. Step 3, then deploy again |
-| Plan fails reading `data.keycloak_user.member[...]` | A name in the design's access roles isn't a Keycloak user. Use an existing `<user>`, publish, deploy again |
+| `bash: id: No such file or directory` | `<id>` was typed literally. Use the real id from step 4 |
+| `The facility is not running (Kubernetes doesn't answer)` | Step 1 |
+| `failed to perform initial login to Keycloak ... 503` | Keycloak wasn't ready. The plan now waits up to 5 minutes for it, so this means Keycloak itself is failing: `kubectl -n dmf-identity get pods` |
+| `Access role member ... is not a user in Keycloak's dmf realm` | Use an existing `<user>` in the design's access roles, publish, deploy again |
 | Plan says the workload doesn't fit | Another compiled workload still holds CPU. Step 2 |
-| The plan names a missing secret | Step 6 |
+| The plan names a missing secret | Step 5 |
 | Stutter or drop-outs in the first minutes | The first-start cache write. Wait for it to finish, then reload the page |
 
 ## What's in the box
