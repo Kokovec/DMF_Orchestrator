@@ -12,7 +12,7 @@ Agreed 2026-11-13:
 | C1 | Input is the published XML only, from the toolkit's API or the archive. No JSON | D1: XML is the contract the compiler validates |
 | C2 | "Spin down" is `make stop`, which stops the whole facility | On this host one compiled workload runs at a time, so a per-workload stop adds nothing |
 | C3 | Removing a workload is `make finalise`: archive, then delete. There's no delete without archive | D9 |
-| C4 | The console shows whether this distro is bind-mounted for the toolkit, and can mount it. It doesn't start or watch the toolkit server | Node is only in the toolkit's distro, and `wsl.exe` doesn't run from here. The mount is what the toolkit needs from this side (`DMF_FACILITY`) |
+| C4 | The console shows whether this distro is bind-mounted for the toolkit, and can mount it. It doesn't start the toolkit server; it only shows what the server's API reports | Node is only in the toolkit's distro, and `wsl.exe` doesn't run from here. The mount is what the toolkit needs from this side (`DMF_FACILITY`) |
 | C5 | Every action is typed into one real terminal (a PTY running bash), shown with xterm.js | Output stays visible, the user can type, and `sudo` prompts for the password there. The console never sees or stores the password |
 | C6 | The console never writes terminal output to disk | `make secrets`, plan output and API responses can hold passphrases and RTMP URLs |
 
@@ -58,11 +58,11 @@ check shows as unknown with its error, never blocks the others, and never fails 
 | Toolkit mount | `findmnt` shows `/mnt/wsl/instances/$WSL_DISTRO_NAME` bind-mounted from `/` |
 | Profile | `.state/facility-<name>.json` exists and is newer than `facility/<name>.yaml` |
 | Workloads | The union of namespaces labelled `dmf.ebu.ch/workload`, `workloads/*.yaml`, `workloads/generated/*.yaml` and `.state/allocations.json`. Per workload: hand-written or compiled; revision (from the generated header); deployed or not; pods ready; on air (reconciler metrics `dmf_reconcile_api_up`, `_pending`, `_failed`, read with `kubectl exec` as `facility.sh` reads the API); reserved CPU (its ResourceQuota) |
-| Toolkit designs | `GET http://localhost:3001/api/workloads`; for each, `published.xml` answering 200 (publishable) or 422 (show its reasons). Mark a design whose id is deployed, and whether its latest revision is newer than the deployed one |
+| Toolkit designs | `GET http://localhost:3001/api/facility` first: show the profile name it loaded, or a warning that it runs without one, so it offers options this facility can't run (stage 9). Then `GET http://localhost:3001/api/workloads`; for each, `published.xml` answering 200 (publishable) or 422 (show its reasons). Mark a design whose id is deployed, and whether its latest revision is newer than the deployed one. The deployed revision is the namespace's `dmf.ebu.ch/revision` label, which Terraform sets from the generated header (stage 9), not the compiled file's header: an import that wasn't provisioned changes the file but not what's running |
 | Archive | Directories in `.state/archive/`, with the id, time and whether `source.xml` exists |
 
 Workload states, in order: **designed** (in the toolkit only), **compiled** (generated file, not
-deployed), **deployed, stopped** (namespace exists, facility down or pods not ready), **running**
+deployed), **deployed, stopped** (namespace exists but pods aren't ready; or, while Kubernetes is down, its Flow Domain mount unit is installed in `/etc/systemd/system`, which stays until finalise and needs no sudo to read. The row says which), **running**
 (pods ready), **on air** (`api_up` 1, nothing pending or failed). A reconciler failure shows as
 **running, N settings failed**.
 
@@ -71,7 +71,7 @@ Status reads never call SwitchFrame routes that return secrets (`/api/output/des
 
 ## Terminal
 
-- One PTY running `bash -l` in the repo, started with the server. Reloading the page reattaches to it and replays the last 2,000 lines, held in memory only (C6). If bash exits, the console starts a new one and says so.
+- One PTY running `bash -l` in the repo, started with the server, without `MAKELEVEL`, `MAKEFLAGS` and `MFLAGS` in its environment: started from `make console`, the shell would otherwise run every `make` typed in it as a sub-make (stage 8). Reloading the page reattaches to it and replays the last 2,000 lines, held in memory only (C6). If bash exits, the console starts a new one and says so.
 - A button types its command into the PTY, followed by a marker the console uses to know when it ended and with what status: `; printf '\033]777;dmf-done;%s\007' "$?"`. xterm.js doesn't display that OSC sequence. While a button's command runs, the other buttons are disabled; typing stays possible.
 - If the user is in the middle of typing, the console doesn't inject: it asks them to clear the line first.
 - `make secrets` has no button. The user types it if they need it.
@@ -83,7 +83,7 @@ Status reads never call SwitchFrame routes that return secrets (`/api/output/des
 | Start | `make start NO_BROWSER=1` | None |
 | Stop | `make stop` | Lists the running workloads: all of them stop |
 | Export profile | `make facility-export` | None |
-| Mount for toolkit | `sudo mkdir -p /mnt/wsl/instances/$WSL_DISTRO_NAME && sudo mount --bind / /mnt/wsl/instances/$WSL_DISTRO_NAME` | Says it lasts until WSL restarts |
+| Mount for toolkit | `mountpoint -q /mnt/wsl/instances/$WSL_DISTRO_NAME \|\| { sudo mkdir -p /mnt/wsl/instances/$WSL_DISTRO_NAME && sudo mount --bind / /mnt/wsl/instances/$WSL_DISTRO_NAME; }`. Disabled while the mount is active; the status row shows a count if mounts were ever stacked | Says it lasts until WSL restarts |
 | Open UI | `make windows-browser WORKLOAD=<id>` | None |
 | Status | `make status WORKLOAD=<id>` | None |
 | Deploy, Update | See below | The plan review |
@@ -107,6 +107,7 @@ A design whose id is already deployed is offered as **Update**, the same flow.
 - Compiler: write `.state/last-import.json` on every `import`, refused or not.
 - `workload-plan.yml`: write `.state/<id>.plan-summary.json` after a successful plan, mode 600.
 - `scripts/prereqs.sh`: install `aiohttp`.
+- Terraform: label the workload namespace `dmf.ebu.ch/revision` with the generated workload's revision (hand-written workloads: none). An in-place change on the next provision.
 - `Makefile`: `console` target.
 - `make validate`: the console's tests.
 

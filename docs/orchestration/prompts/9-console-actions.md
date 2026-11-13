@@ -14,6 +14,8 @@ Build:
 3. The buttons in the spec's Actions table, with their confirmations. Finalise needs the id typed.
 4. Deploy and Update as separate steps: import, secrets one at a time, plan, review dialog, provision. The console reads the two JSON files, never terminal output.
 5. Redeploy from the archive.
+6. Terraform labels the workload namespace `dmf.ebu.ch/revision`, and the designs panel compares against that label, as the spec's Status table says. Plan every deployed workload: the label is an in-place change.
+7. The designs panel shows which facility profile the toolkit server loaded (`GET /api/facility`), or warns that it has none.
 
 Tests as the spec lists for the deploy flow, against fake `make` targets, added to `make validate`. The goldens shouldn't change; confirm with a run.
 
