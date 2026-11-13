@@ -8,6 +8,7 @@ from this page's own Origin.
 import asyncio
 import hmac
 import json
+import re
 import secrets
 import shlex
 import time
@@ -15,16 +16,23 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
+from .flow import Flow, FlowError
 from .status import WORKLOAD_ID, Status
 from .terminal import Busy, Terminal
 
 STATIC = Path(__file__).parent / "static"
 POLL_SECONDS = 5
 
-# What each button types (spec: Actions). Stage 8 wires only these; the rest are shown disabled.
+# What each button types (spec: Actions). Deploy, Update and Redeploy are flows (flow.py).
 MOUNT = ("mountpoint -q /mnt/wsl/instances/$WSL_DISTRO_NAME || "
          "{ sudo mkdir -p /mnt/wsl/instances/$WSL_DISTRO_NAME && "
          "sudo mount --bind / /mnt/wsl/instances/$WSL_DISTRO_NAME; }")
+PER_WORKLOAD = {"open-ui": "windows-browser", "status": "status", "finalise": "finalise"}
+# Refused while a deploy flow is open: they would change what it is planning against.
+LIFECYCLE = {"start", "stop", "finalise"}
+ARCHIVE_RUN = re.compile(r"^[a-z0-9]([-a-z0-9]{0,40}[a-z0-9])?-\d{8}T\d{6}Z$")
+REDEPLOY_NOTE = ("finalise deleted this workload's secrets: if the design references any, the import asks for "
+                 "each again")
 
 
 def command_for(action, workload, facility):
@@ -33,17 +41,20 @@ def command_for(action, workload, facility):
         return "make facility-export" + fac
     if action == "mount":
         return MOUNT
-    if action in ("open-ui", "status"):
+    if action == "start":
+        return "make start NO_BROWSER=1"
+    if action == "stop":
+        return "make stop"
+    if action in PER_WORKLOAD:
         if not workload or not WORKLOAD_ID.match(workload):
             raise web.HTTPBadRequest(text="a valid workload id is required")
-        target = "windows-browser" if action == "open-ui" else "status"
-        return f"make {target} WORKLOAD={workload}"
+        return f"make {PER_WORKLOAD[action]} WORKLOAD={workload}"
     raise web.HTTPBadRequest(text=f"unknown action {action!r}")
 
 
 class Console:
     def __init__(self, repo, port, facility="local", token=None, status=None, terminal_argv=("bash", "-l"),
-                 poll_seconds=POLL_SECONDS):
+                 poll_seconds=POLL_SECONDS, toolkit_url="http://localhost:3001"):
         self.repo = Path(repo)
         self.port = port
         self.facility = facility
@@ -55,13 +66,17 @@ class Console:
         self.poll_seconds = poll_seconds
         self.snapshot = None
         self.clients = set()
-        self.terminal = Terminal(repo, argv=terminal_argv, on_output=self._output, on_event=self._event)
+        self.toolkit_url = toolkit_url.rstrip("/")
+        self.terminal = Terminal(repo, argv=terminal_argv, on_output=self._output, on_event=self._terminal_event)
+        self.flow = Flow(self.repo, self.terminal.run, lambda st: self._event({"type": "flow", "flow": st}),
+                         lambda delay, fn: asyncio.get_running_loop().call_later(delay, fn), facility)
         self.app = web.Application(middlewares=[self.guard])
         self.app.add_routes([
             web.get("/", self.index),
             web.get("/api/status", self.get_status),
             web.get("/api/actions", self.get_actions),
             web.post("/api/action", self.post_action),
+            web.post("/api/flow", self.post_flow),
             web.get("/ws", self.ws),
             web.static("/static", STATIC, follow_symlinks=False),
         ])
@@ -116,24 +131,69 @@ class Console:
             "commands": {
                 "export": command_for("export", None, self.facility),
                 "mount": MOUNT,
-                "open-ui": "make windows-browser WORKLOAD=<id>",
-                "status": "make status WORKLOAD=<id>",
+                "start": command_for("start", None, self.facility),
+                "stop": command_for("stop", None, self.facility),
+                **{a: f"make {t} WORKLOAD=<id>" for a, t in PER_WORKLOAD.items()},
+                "import": f"make import XML=<source>{'' if self.facility == 'local' else ' FACILITY=' + self.facility}",
+                "design-xml": f"{self.toolkit_url}/api/workloads/<id>/published.xml",
+                "archive-xml": ".state/archive/<run>/source.xml",
             },
             "running": self.terminal.action,
+            "flow": self.flow.snapshot(),
         }
 
-    async def post_action(self, request):
+    @staticmethod
+    async def _body(request):
         try:
             body = await request.json()
         except json.JSONDecodeError:
             raise web.HTTPBadRequest(text="JSON body expected")
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest(text="JSON object expected")
+        return body
+
+    async def post_action(self, request):
+        body = await self._body(request)
         action, workload = body.get("action"), body.get("workload")
         command = command_for(action, workload, self.facility)
+        if action == "finalise" and body.get("confirm") != workload:
+            return web.json_response({"ok": False, "reason": "type the workload id to confirm finalise"}, status=400)
+        if action in LIFECYCLE and self.flow.active():
+            return web.json_response({"ok": False, "reason": "a deploy is open below: finish or cancel it first"},
+                                     status=409)
         try:
             self.terminal.run(action, command)
         except Busy as e:
             return web.json_response({"ok": False, "reason": str(e)}, status=409)
         return web.json_response({"ok": True, "command": command})
+
+    def deployed(self):
+        items = ((self.snapshot or {}).get("workloads") or {}).get("items") or []
+        return {w["id"] for w in items if w.get("deployed")}
+
+    async def post_flow(self, request):
+        body = await self._body(request)
+        op = body.get("op")
+        try:
+            if op == "deploy":
+                design = body.get("design")
+                if not isinstance(design, str) or not WORKLOAD_ID.match(design):
+                    raise web.HTTPBadRequest(text="a valid design id is required")
+                kind = "update" if design in self.deployed() else "deploy"
+                self.flow.start(kind, f"{self.toolkit_url}/api/workloads/{design}/published.xml", design)
+            elif op == "redeploy":
+                run = body.get("run")
+                if not isinstance(run, str) or not ARCHIVE_RUN.match(run):
+                    raise web.HTTPBadRequest(text="a valid archive run is required")
+                source = f".state/archive/{run}/source.xml"
+                if not (self.repo / source).is_file():
+                    raise web.HTTPBadRequest(text=f"{source} doesn't exist")
+                self.flow.start("redeploy", source, None, note=REDEPLOY_NOTE)
+            else:
+                self.flow.op(op)
+        except FlowError as e:
+            return web.json_response({"ok": False, "reason": str(e), "flow": self.flow.snapshot()}, status=409)
+        return web.json_response({"ok": True, "flow": self.flow.snapshot()})
 
     # ---- WebSocket: terminal I/O and status pushes ----
 
@@ -160,11 +220,16 @@ class Console:
         return ws
 
     def _broadcast(self, send):
+        async def safe(ws):
+            try:
+                await send(ws)
+            except (ConnectionError, RuntimeError):  # a page closing as we send: it reattaches with a replay
+                self.clients.discard(ws)
         for ws in list(self.clients):
             if ws.closed:
                 self.clients.discard(ws)
             else:
-                asyncio.ensure_future(send(ws))
+                asyncio.ensure_future(safe(ws))
 
     def _output(self, data):
         self._broadcast(lambda ws: ws.send_bytes(data))
@@ -172,6 +237,11 @@ class Console:
     def _event(self, event):
         text = json.dumps(event)
         self._broadcast(lambda ws: ws.send_str(text))
+
+    def _terminal_event(self, event):
+        self._event(event)
+        if event.get("type") == "done":
+            self.flow.on_done(event)
 
     # ---- lifecycle ----
 

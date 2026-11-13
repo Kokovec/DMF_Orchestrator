@@ -110,10 +110,17 @@ class AuthTest(unittest.IsolatedAsyncioTestCase):
         h = {"Origin": self.origin}
         async with self.session(self.cookie) as s:
             ws = await s.ws_connect(f"{self.base}/ws", origin=self.origin)
-            for bad in ({"action": "start"}, {"action": "finalise", "workload": "studio-a"},
-                        {"action": "status", "workload": "x; rm -rf /"}, {"action": "status"}, {"action": "rm"}):
+            for bad in ({"action": "finalise", "workload": "studio-a"},  # finalise without the typed id
+                        {"action": "finalise", "workload": "x; rm -rf /", "confirm": "x; rm -rf /"},
+                        {"action": "status", "workload": "x; rm -rf /"}, {"action": "status"}, {"action": "rm"},
+                        ["status"]):
                 async with s.post(f"{self.base}/api/action", json=bad, headers=h) as r:
-                    self.assertEqual(r.status, 400, bad)  # stage 9 actions and bad ids aren't wired
+                    self.assertEqual(r.status, 400, bad)
+            for bad in ({"op": "deploy", "design": "x y"}, {"op": "redeploy", "run": "../x-20261112T004502Z"}):
+                async with s.post(f"{self.base}/api/flow", json=bad, headers=h) as r:
+                    self.assertEqual(r.status, 400, bad)
+            async with s.post(f"{self.base}/api/flow", json={"op": "close"}, headers={"Origin": "http://evil.test"}) as r:
+                self.assertEqual(r.status, 403)
             Audit.start()
             async with s.post(f"{self.base}/api/action", json={"action": "status", "workload": "studio-a"}, headers=h) as r:
                 body = await r.json()

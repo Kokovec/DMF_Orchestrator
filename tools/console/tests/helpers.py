@@ -182,7 +182,8 @@ def facility_up(metrics=METRICS_ON_AIR, mixer_ready=True):
             {"args": ["-n dmf-system get pods", "nmos-registry"], "stdout": j({"items": [pod("nmos-registry-0")]})},
             {"args": ["svc traefik"], "stdout": "10.0.0.5"},
             {"args": ["get ns -l dmf.ebu.ch/workload"], "stdout": j({"items": [
-                {"metadata": {"name": "wl-studio-a", "labels": {"dmf.ebu.ch/workload": "studio-a"}}}]})},
+                {"metadata": {"name": "wl-studio-a", "labels": {"dmf.ebu.ch/workload": "studio-a",
+                                                                "dmf.ebu.ch/revision": "2"}}}]})},
             {"args": ["get ns -o name"], "stdout": "namespace/default\nnamespace/wl-studio-a\n"},
         ],
         "findmnt": [

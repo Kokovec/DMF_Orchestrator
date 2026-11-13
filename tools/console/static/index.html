@@ -22,8 +22,8 @@
     <div class="row">
       <span id="fac-capacity" class="item"></span>
       <span class="buttons">
-        <button disabled title="stage 9: make start NO_BROWSER=1">Start <small>stage 9</small></button>
-        <button disabled title="stage 9: make stop">Stop <small>stage 9</small></button>
+        <button class="act" data-action="start">Start</button>
+        <button class="act" data-action="stop">Stop</button>
       </span>
     </div>
     <div class="row">
@@ -42,6 +42,7 @@
 
   <section class="panel designs" aria-labelledby="h-designs">
     <h2 id="h-designs">Toolkit designs</h2>
+    <p id="ds-profile" class="row"></p>
     <p id="ds-note" class="note"></p>
     <ul id="ds-list" class="list"></ul>
   </section>
@@ -49,6 +50,11 @@
   <section class="panel archive" aria-labelledby="h-archive">
     <h2 id="h-archive">Archive</h2>
     <ul id="ar-list" class="list"></ul>
+  </section>
+
+  <section class="panel flow" aria-labelledby="h-flow" id="flow" hidden>
+    <h2 id="h-flow">Deploy</h2>
+    <div id="flow-body"></div>
   </section>
 
   <section class="panel terminal" aria-labelledby="h-terminal">
@@ -66,6 +72,38 @@
     <menu>
       <button value="cancel">Cancel</button>
       <button value="ok" id="confirm-ok">Run in the terminal</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="finalise">
+  <form method="dialog">
+    <h3>Finalise <span id="fin-id"></span></h3>
+    <p>Finalise archives the workload, then deletes it. Into <code>.state/archive/&lt;id&gt;-&lt;time&gt;/</code> it copies
+      the container logs, SwitchFrame's state, the design, its Kubernetes resources and events, the source XML and
+      compiled config, and the recordings, and checks the archive before anything is deleted.</p>
+    <p><strong>Then its volumes and its secrets are deleted</strong>, with its namespace, Flow Domain, allocation and
+      generated files. That can't be undone: redeploying from the archive gives a new start, and asks for the secrets again.</p>
+    <p>The facility must stay running until it ends. sudo asks for your password in the terminal.</p>
+    <pre id="fin-cmd"></pre>
+    <label for="fin-input">Type the workload id to confirm</label>
+    <input id="fin-input" autocomplete="off" spellcheck="false">
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button value="ok" id="fin-ok" class="danger" disabled>Finalise</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="review" class="wide">
+  <form method="dialog">
+    <h3 id="rv-title"></h3>
+    <div id="rv-body"></div>
+    <pre id="rv-cmd"></pre>
+    <menu>
+      <button value="cancel-flow">Cancel the deploy</button>
+      <button value="later">Not now</button>
+      <button value="ok" id="rv-ok" class="primary">Provision</button>
     </menu>
   </form>
 </dialog>

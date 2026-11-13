@@ -328,12 +328,13 @@ def check_secrets(repo, workload_id, used, report):
                                     "workload-refs Secret")
             continue
         if name not in values:
-            report.refuse(6, place, f"secret {name!r} is not in {rel}; run: make secret-set WORKLOAD={workload_id} NAME={name}")
+            report.refuse(6, place, f"secret {name!r} is not in {rel}; run: make secret-set WORKLOAD={workload_id} NAME={name}",
+                          secret=name)
             continue
         value = values[name]
         if not isinstance(value, str) or not value:
-            report.refuse(6, place, f"secret {name!r} in {rel} must be a non-empty string")
+            report.refuse(6, place, f"secret {name!r} in {rel} must be a non-empty string", secret=name)
         elif param.endswith(".srt.passphrase") and not SRT_PASSPHRASE_BYTES[0] <= len(value.encode()) <= SRT_PASSPHRASE_BYTES[1]:
             report.refuse(6, place, f"secret {name!r} must be {SRT_PASSPHRASE_BYTES[0]}-{SRT_PASSPHRASE_BYTES[1]} bytes "
-                                    "for SRT encryption")
+                                    "for SRT encryption", secret=name)
 

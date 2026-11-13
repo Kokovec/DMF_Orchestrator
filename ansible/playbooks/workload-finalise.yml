@@ -253,10 +253,11 @@
 
     # They hold secret values and are never archived. Deploying the id again needs its secrets set
     # again; compile rule 6 names them. The file module reports paths only, never contents.
-    - name: Remove the workload's secrets file and Terraform plan file
+    - name: Remove the workload's secrets file, Terraform plan file and plan summary
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
         - "{{ dmf_state_dir }}/secrets/{{ workload }}.yaml"
         - "{{ dmf_state_dir }}/{{ workload }}.tfplan"
+        - "{{ dmf_state_dir }}/{{ workload }}.plan-summary.json"

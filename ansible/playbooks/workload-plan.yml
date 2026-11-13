@@ -12,6 +12,13 @@
       ansible.builtin.set_fact:
         dmf_workload: "{{ lookup('ansible.builtin.file', workload_file) | from_yaml }}"
 
+    # The console reads this file after a plan that succeeded: a failed plan must not leave the
+    # previous one's behind.
+    - name: Remove the previous plan summary
+      ansible.builtin.file:
+        path: "{{ dmf_state_dir }}/{{ workload }}.plan-summary.json"
+        state: absent
+
     - name: Validate design
       ansible.builtin.assert:
         quiet: true
@@ -157,6 +164,27 @@
       ansible.builtin.file:
         path: "{{ dmf_state_dir }}/{{ workload }}.tfplan"
         mode: "0600"
+
+    # For the facility console (docs/orchestration/05-facility-console.md): counts, the resources
+    # replaced and the pods restarted, and the capacity verdict. Addresses and names only: the
+    # script reads the plan's JSON through a pipe and writes no value from it.
+    - name: Write the plan summary (.state/<id>.plan-summary.json, mode 600)
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ dmf_repo_root }}/ansible/scripts/plan_summary.py"
+          - --plan
+          - "{{ dmf_state_dir }}/{{ workload }}.tfplan"
+          - --tf-dir
+          - "{{ dmf_terraform_dir }}/workload"
+          - --workload
+          - "{{ workload }}"
+          - --revision
+          - "{{ dmf_workload.metadata.revision | default('') }}"
+          - --out
+          - "{{ dmf_state_dir }}/{{ workload }}.plan-summary.json"
+        stdin: "{{ capacity.stdout }}"
+      changed_when: true
 
     - name: Plan summary
       ansible.builtin.debug:

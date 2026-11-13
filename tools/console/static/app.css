@@ -21,12 +21,12 @@ html, body { margin: 0; background: var(--bg); color: var(--text);
 
 .grid { display: grid; gap: 10px; padding: 0 16px 16px;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas: "facility facility" "workloads designs" "archive designs" "terminal terminal"; }
+  grid-template-areas: "facility facility" "workloads designs" "archive designs" "flow flow" "terminal terminal"; }
 .facility { grid-area: facility; } .workloads { grid-area: workloads; } .designs { grid-area: designs; }
-.archive { grid-area: archive; } .terminal { grid-area: terminal; }
+.archive { grid-area: archive; } .terminal { grid-area: terminal; } .flow { grid-area: flow; }
 @media (max-width: 760px) {
   .grid { grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "facility" "workloads" "designs" "archive" "terminal"; }
+    grid-template-areas: "facility" "workloads" "designs" "archive" "flow" "terminal"; }
 }
 
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
@@ -67,3 +67,24 @@ dialog::backdrop { background: rgb(0 0 0 / .4); }
 dialog h3 { margin: 0 0 8px; font-size: 15px; }
 dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); padding: 8px; border-radius: 6px; font-size: 12px; }
 dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 12px 0 0; }
+
+[hidden] { display: none !important; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger:not(:disabled) { background: var(--bad); border-color: var(--bad); color: #fff; }
+dialog.wide { max-width: min(760px, calc(100vw - 32px)); width: 100%; }
+dialog label { display: block; margin: 10px 0 4px; font-size: 13px; }
+dialog input { font: inherit; width: 100%; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); }
+dialog code { font-size: 12px; }
+.warnbox { border-left: 3px solid var(--unknown); padding: 4px 8px; margin: 6px 0; font-size: 13px; }
+.badbox { border-left: 3px solid var(--bad); padding: 4px 8px; margin: 6px 0; font-size: 13px; }
+.okbox { border-left: 3px solid var(--ok); padding: 4px 8px; margin: 6px 0; font-size: 13px; }
+.steps { display: flex; flex-wrap: wrap; gap: 4px 6px; list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; }
+.steps li { padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+.steps li.done { color: var(--ok); border-color: var(--ok); }
+.steps li.now { color: var(--text); border-color: var(--accent); font-weight: 600; }
+.steps li.bad { color: var(--bad); border-color: var(--bad); }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 6px 0; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+details { margin: 4px 0; font-size: 13px; } details ul { margin: 2px 0 2px 1.2em; padding: 0; }
+.big { font-size: 15px; font-weight: 600; }

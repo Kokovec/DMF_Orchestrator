@@ -17,8 +17,13 @@ from tools.console.tests.helpers import Audit, FakeRepo, facility_down, facility
 os.chmod(helpers.FAKEBIN, 0o755)
 
 
-async def toolkit(port, designs=True):
-    """A fake toolkit API: studio-a publishes, new-show has two problems."""
+EXPORTED = {"apiVersion": "dmf.local/v1alpha1", "kind": "FacilityExport", "name": "local",
+            "capabilities": {"mxl": True, "gpu": False}, "limits": {"domainsPerWorkload": 1}}
+
+
+async def toolkit(port, designs=True, profile=EXPORTED):
+    """A fake toolkit API: studio-a publishes, new-show has two problems. profile: what
+    GET /api/facility answers ({} when the server runs without one), or None for no such route."""
     async def listing(request):
         return web.json_response({"workloads": [
             {"id": "studio-a", "name": "Studio A", "revision": 4, "updatedAt": "x"},
@@ -30,8 +35,16 @@ async def toolkit(port, designs=True):
         return web.json_response({"error": "revision 1 is not publishable",
                                   "details": ["sw1: needs a director", "no output"]}, status=422)
 
+    async def facility(request):  # as the toolkit's server/app.ts answers
+        if not profile:
+            return web.json_response({})
+        return web.json_response({"name": profile["name"], "capabilities": profile["capabilities"],
+                                  "limits": profile.get("limits", {})})
+
     app = web.Application()
     app.add_routes([web.get("/api/workloads", listing), web.get(r"/api/workloads/{id}/published.xml", published)])
+    if profile is not None:
+        app.add_routes([web.get("/api/facility", facility)])
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", port).start()
@@ -45,6 +58,7 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         self.status = Status(self.repo.root, toolkit_url=f"http://localhost:{self.port}", timeout=1.0,
                              env=self.repo.env(), systemd_dir=self.repo.systemd, distro="Test-Distro", tools_bin=False)
         self.toolkit = None
+        (self.repo.root / ".state" / "facility-local.json").write_text(json.dumps(EXPORTED))
 
     async def asyncTearDown(self):
         if self.toolkit:
@@ -91,11 +105,15 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("no workload old-one", w["old-one"]["errors"][0])
 
         d = {x["id"]: x for x in snap["designs"]["items"]}
+        # The deployed revision is the namespace label (2), not the compiled file's header (3): an
+        # import that wasn't provisioned changes the file but not what runs.
+        self.assertEqual(a["deployed_revision"], 2)
         self.assertEqual(d["studio-a"], {"id": "studio-a", "name": "Studio A", "revision": 4, "deployed": True,
-                                         "deployed_revision": 3, "newer": True, "publishable": True})
+                                         "deployed_revision": 2, "newer": True, "publishable": True})
         self.assertEqual((d["new-show"]["publishable"], d["new-show"]["reasons"]),
                          (False, ["sw1: needs a director", "no output"]))
         self.assertFalse(d["new-show"]["deployed"])
+        self.assertEqual(snap["designs"]["profile"], {"state": "ok", "text": "local", "name": "local"})
 
         runs = snap["archive"]["items"]
         self.assertEqual([(r["id"], r["source_xml"]) for r in runs], [("studio-a", True), ("news-studio", False)])
@@ -165,6 +183,40 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         # Timed-out fakes are killed, not left behind.
         out = subprocess.run(["pgrep", "-f", str(self.repo.bin)], capture_output=True, text=True).stdout
         self.assertEqual(out.strip(), "")
+
+    async def test_deployed_without_revision_label(self):
+        sc = facility_up()
+        ns = next(r for r in sc["kubectl"] if r["args"] == ["get ns -l dmf.ebu.ch/workload"])
+        ns["stdout"] = json.dumps({"items": [{"metadata": {"name": "wl-studio-a",
+                                                           "labels": {"dmf.ebu.ch/workload": "studio-a"}}}]})
+        self.repo.scenario(sc)
+        self.toolkit = await toolkit(self.port)
+        snap = await self.collect()
+        d = {x["id"]: x for x in snap["designs"]["items"]}["studio-a"]
+        self.assertEqual((d["deployed"], d["deployed_revision"]), (True, None))
+        self.assertNotIn("newer", d)
+
+    async def test_toolkit_profile(self):
+        self.repo.scenario(facility_up())
+        cases = [
+            ({}, "bad", "none: the toolkit offers options this facility can't run"),
+            ({**EXPORTED, "capabilities": {"mxl": True, "gpu": True}}, "bad", "local, not the one exported here"),
+            ({**EXPORTED, "name": "other"}, "bad", "other, not the one exported here"),
+            (None, "unknown", None),
+        ]
+        for profile, state, text in cases:
+            with self.subTest(profile=profile):
+                self.toolkit = await toolkit(self.port, profile=profile)
+                try:
+                    snap = await self.collect()
+                finally:
+                    await self.toolkit.cleanup()
+                    self.toolkit = None
+                got = snap["designs"]["profile"]
+                self.assertEqual(snap["designs"]["state"], "ok")  # the designs still list
+                self.assertEqual((got["state"], got.get("text")), (state, text))
+                if state == "bad":
+                    self.assertIn("fix", got)
 
     async def test_toolkit_hangs(self):
         self.repo.scenario(facility_up())

@@ -5,9 +5,15 @@
   python -m tools.dmf_compile release <workload id>
 
 Exit status: 0 compiled, 1 refused, 2 usage.
+
+Every compile, refused or not, also writes .state/last-import.json (05-facility-console.md,
+Deploy and Update), which the facility console reads instead of this output. It holds the
+workload's id, revision, allocation, warnings and problems, and never a secret value.
 """
 import argparse
+import datetime as dt
 import ipaddress
+import json
 import os
 import sys
 import urllib.parse
@@ -57,13 +63,31 @@ def rel(path, repo):
         return str(path)
 
 
-def cmd_compile(args, repo, out):
+def last_import_path(repo):
+    return Path(repo) / ".state" / "last-import.json"
+
+
+def write_last_import(repo, record):
+    """Replaces .state/last-import.json in one step, so a reader never sees half a file."""
+    path = last_import_path(repo)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(record, indent=2) + "\n")
+    os.replace(tmp, path)
+
+
+def cmd_compile(args, repo, out, record):
     data, name = fetch(args.source, args.allow_remote)
     doc = reader.read(data)
+    record["id"], record["revision"] = doc["metadata"]["id"], doc["metadata"]["revision"]
     fac = facility.load(repo, args.facility)
     result = compiler.compile_document(doc, repo, fac, name, data)
     written = compiler.write(repo, result)
     a = result.allocation
+    record.update(ok=True, warnings=list(result.warnings), hostname=result.hostname,
+                  allocation={"uid": a["uid"], "gid": a["gid"], "quicPort": a["quicPort"], "srtPort": a["srtPort"],
+                              "new": bool(result.new_allocation)},
+                  files=[rel(p, repo) for p in written])
     print(f"Compiled {args.source}: {result.workload_id} revision {result.revision}, library {result.library}, "
           f"facility {fac.name}", file=out)
     for w in result.warnings:
@@ -92,9 +116,24 @@ def main(argv=None, repo=REPO, out=sys.stdout, err=sys.stderr):
     r = sub.add_parser("release", help="release a workload's allocation")
     r.add_argument("workload")
     args = ap.parse_args(argv)
+    record = {"source": getattr(args, "source", None), "facility": getattr(args, "facility", None),
+              "time": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "ok": False, "id": None,
+              "revision": None, "allocation": None, "hostname": None, "warnings": [], "problems": [], "files": []}
     try:
         if args.cmd == "compile":
-            return cmd_compile(args, repo, out)
+            try:
+                return cmd_compile(args, repo, out, record)
+            except CompileError as e:
+                record.update(problems=[p.as_dict() for p in e.problems], warnings=list(e.warnings))
+                raise
+            except OSError as e:
+                record["problems"] = [Problem("read", args.source, str(e)).as_dict()]
+                raise
+            finally:
+                try:
+                    write_last_import(repo, record)
+                except OSError as e:
+                    print(f"error: can't write {rel(last_import_path(repo), repo)}: {e}", file=err)
         if args.cmd == "facility-export":
             path = facility.export(repo, args.facility)
             print(f"wrote {rel(path, repo)}", file=out)

@@ -99,9 +99,13 @@ class TerminalTest(unittest.IsolatedAsyncioTestCase):
         await self.rec.wait(self.t.shell_idle)
         self.t.write("x\x7f")  # typed and erased: empty again
         self.assertEqual(self.t.line, 0)
+        mark = len(self.rec.out)
         self.t.write("\x1b[A")  # history recall: unknown contents
         with self.assertRaisesRegex(Busy, "partly typed"):
             self.t.run("test", "true")
+        # Ctrl-C reaches bash as a signal at once, ahead of keys still queued: wait until the
+        # recalled line is drawn, or it lands on the next prompt instead (seen under load).
+        await self.rec.wait(lambda: b"dmf-done" in self.rec.out[mark:])
         self.t.write("\x03")
         await self.rec.wait(self.t.shell_idle)
         await asyncio.sleep(0.3)  # let readline redraw its prompt, or it drops the next keys

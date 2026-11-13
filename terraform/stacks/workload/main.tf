@@ -148,7 +148,7 @@ locals {
 resource "kubernetes_namespace_v1" "workload" {
   metadata {
     name = local.ns
-    labels = {
+    labels = merge({
       "dmf.ebu.ch/workload"    = local.name
       "dmf.ebu.ch/flow-domain" = local.mx.domain
       "dmf.ebu.ch/uid"         = tostring(local.mx.uid)
@@ -158,7 +158,12 @@ resource "kubernetes_namespace_v1" "workload" {
       "pod-security.kubernetes.io/enforce" = "privileged"
       "pod-security.kubernetes.io/warn"    = "restricted"
       "pod-security.kubernetes.io/audit"   = "restricted"
-    }
+      },
+      # The deployed revision of a generated workload, which the facility console compares with
+      # the toolkit's latest (05-facility-console.md, Status). Hand-written workloads have none.
+      local.generated && can(local.wl.metadata.revision) ? {
+        "dmf.ebu.ch/revision" = tostring(local.wl.metadata.revision)
+    } : {})
     annotations = {
       "dmf.ebu.ch/description" = try(local.wl.metadata.description, "")
     }

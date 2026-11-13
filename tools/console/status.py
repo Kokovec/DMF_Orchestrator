@@ -210,9 +210,14 @@ class Status:
         cpu = {q["metadata"]["namespace"]: q["spec"].get("hard", {}).get("requests.cpu") for q in quotas}
         namespaces = {}
         for ns in nss:
-            wid = ns["metadata"]["labels"]["dmf.ebu.ch/workload"]
+            labels = ns["metadata"]["labels"]
+            wid = labels["dmf.ebu.ch/workload"]
             name = ns["metadata"]["name"]
-            namespaces[wid] = {"namespace": name, "cpu": cpu.get(name)}
+            # Terraform sets the revision label from the generated header (stage 9); a workload
+            # provisioned before that, or a hand-written one, has none.
+            rev = labels.get("dmf.ebu.ch/revision")
+            namespaces[wid] = {"namespace": name, "cpu": cpu.get(name),
+                               "revision": int(rev) if rev and rev.isdigit() else None}
         return {"state": "ok", "namespaces": namespaces}
 
     async def workload(self, wid, cluster):
@@ -245,6 +250,7 @@ class Status:
             w["state"] = not_deployed(w)
             return w
         w["cpu"] = ns["cpu"]
+        w["deployed_revision"] = ns.get("revision")
         pods = await self.guarded(self.pods(ns["namespace"]))
         if pods.get("state") == "unknown":
             w["errors"].append(f"pods: {pods['error']}")
@@ -297,10 +303,14 @@ class Status:
     # ---- toolkit designs ----
 
     async def designs(self, deployed):
-        """The toolkit's designs, each with whether it publishes. deployed: {id: compiled revision}."""
+        """The toolkit's designs, each with whether it publishes.
+
+        deployed: {id: deployed revision, from the namespace's dmf.ebu.ch/revision label, or None}.
+        """
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         try:
             async with aiohttp.ClientSession(timeout=timeout) as s:
+                profile = await self.toolkit_profile(s)
                 async with s.get(f"{self.toolkit_url}/api/workloads") as r:
                     if r.status != 200:
                         raise CheckError(f"toolkit API answered {r.status} on /api/workloads")
@@ -310,14 +320,43 @@ class Status:
             port = self.toolkit_url.rsplit(":", 1)[-1]
             return {"state": "bad", "text": f"toolkit API: not reachable on :{port}",
                     "error": str(e) or type(e).__name__, "items": []}
-        return {"state": "ok", "text": f"{len(items)} designs", "items": list(items)}
+        return {"state": "ok", "text": f"{len(items)} designs", "items": list(items), "profile": profile}
+
+    async def toolkit_profile(self, session):
+        """Which facility profile the toolkit server loaded (GET /api/facility: {} without one),
+        and whether it is the one this facility exported."""
+        async with session.get(f"{self.toolkit_url}/api/facility") as r:
+            if r.status != 200:
+                return unknown(f"toolkit API answered {r.status} on /api/facility")
+            body = await r.json(content_type=None)
+        if not isinstance(body, dict) or not body.get("capabilities"):
+            return {"state": "bad", "text": "none: the toolkit offers options this facility can't run",
+                    "fix": "make facility-export, then restart the toolkit server with DMF_FACILITY set to the "
+                           f"exported .state/facility-{self.facility}.json"}
+        name = str(body.get("name"))
+        exported = self.repo / ".state" / f"facility-{self.facility}.json"
+        try:
+            ours = json.loads(exported.read_text())
+        except (OSError, ValueError):
+            ours = None
+        if ours is None:
+            return {"state": "unknown", "text": name, "name": name,
+                    "error": f".state/facility-{self.facility}.json isn't there to compare with"}
+        same = name == ours.get("name") and body.get("capabilities") == ours.get("capabilities") \
+            and (body.get("limits") or {}) == (ours.get("limits") or {})
+        if same:
+            return {"state": "ok", "text": name, "name": name}
+        return {"state": "bad", "text": f"{name}, not the one exported here", "name": name,
+                "fix": f"the toolkit's profile differs from .state/facility-{self.facility}.json: "
+                       "restart the toolkit server to load the current export"}
 
     async def design(self, session, d, deployed):
         wid, rev = str(d["id"]), d.get("revision")
         item = {"id": wid, "name": d.get("name"), "revision": rev, "deployed": wid in deployed}
-        if wid in deployed and isinstance(rev, int) and isinstance(deployed[wid], int):
+        if wid in deployed:
             item["deployed_revision"] = deployed[wid]
-            item["newer"] = rev > deployed[wid]
+            if isinstance(rev, int) and isinstance(deployed[wid], int):
+                item["newer"] = rev > deployed[wid]
         try:
             async with session.get(f"{self.toolkit_url}/api/workloads/{wid}/published.xml") as r:
                 if r.status == 200:
@@ -359,8 +398,8 @@ class Status:
                                        self.guarded(self.workloads(), 4), self.guarded(self.archive()))
         facility = dict(zip(names, results))
         workloads, archive = results[-2], results[-1]
-        compiled = {w["id"]: w.get("revision") for w in workloads.get("items", []) if w.get("deployed")}
-        designs = await self.guarded(self.designs(compiled), 2)
+        deployed = {w["id"]: w.get("deployed_revision") for w in workloads.get("items", []) if w.get("deployed")}
+        designs = await self.guarded(self.designs(deployed), 3)
         return {"time": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
                 "facility": facility, "workloads": workloads, "designs": designs, "archive": archive}
 
