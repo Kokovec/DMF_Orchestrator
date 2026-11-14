@@ -21,6 +21,14 @@ DRY_RUN="${2:-}"
 command -v powershell.exe >/dev/null || { echo "Not running under WSL (no powershell.exe)." >&2; exit 1; }
 
 HOST=$(awk '/^ *hostname:/ {print $2; exit}' "$("$ROOT/scripts/workload-file.sh" "$WORKLOAD")")
+# Without its namespace the ingress has no route for $HOST, and Chrome would only show Traefik's 404.
+if ! NS_ERR=$(kubectl get ns "wl-$WORKLOAD" -o name 2>&1 >/dev/null); then
+  case "$NS_ERR" in
+    *NotFound*|*"not found"*) echo "$WORKLOAD isn't deployed (no namespace wl-$WORKLOAD). Deploy it first." >&2 ;;
+    *) echo "Kubernetes doesn't answer: start the facility first (make start NO_BROWSER=1)." >&2 ;;
+  esac
+  exit 1
+fi
 DOMAIN="${HOST#*.}"
 IP=$(kubectl -n kube-system get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
 [ -n "$IP" ] || IP=$(ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1)
