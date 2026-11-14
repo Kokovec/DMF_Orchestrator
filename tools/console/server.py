@@ -28,7 +28,7 @@ MOUNT = ("mountpoint -q /mnt/wsl/instances/$WSL_DISTRO_NAME || "
          "{ sudo mkdir -p /mnt/wsl/instances/$WSL_DISTRO_NAME && "
          "sudo mount --bind / /mnt/wsl/instances/$WSL_DISTRO_NAME; }")
 PER_WORKLOAD = {"open-ui": "windows-browser", "status": "status", "finalise": "finalise"}
-# Refused while a deploy flow is open: they would change what it is planning against.
+# They change what an open deploy planned against: it has to plan again (Flow.facility_changed).
 LIFECYCLE = {"start", "stop", "finalise"}
 ARCHIVE_RUN = re.compile(r"^[a-z0-9]([-a-z0-9]{0,40}[a-z0-9])?-\d{8}T\d{6}Z$")
 REDEPLOY_NOTE = ("finalise deleted this workload's secrets: if the design references any, the import asks for "
@@ -158,14 +158,13 @@ class Console:
         command = command_for(action, workload, self.facility)
         if action == "finalise" and body.get("confirm") != workload:
             return web.json_response({"ok": False, "reason": "type the workload id to confirm finalise"}, status=400)
-        if action in LIFECYCLE and self.flow.active():
-            return web.json_response({"ok": False, "reason": "a deploy is open below: finish or cancel it first"},
-                                     status=409)
         try:
             self.terminal.run(action, command)
         except Busy as e:
             return web.json_response({"ok": False, "reason": str(e)}, status=409)
-        return web.json_response({"ok": True, "command": command})
+        if action in LIFECYCLE:
+            self.flow.facility_changed(action, workload)
+        return web.json_response({"ok": True, "command": command, "flow": self.flow.snapshot()})
 
     def deployed(self):
         items = ((self.snapshot or {}).get("workloads") or {}).get("items") or []

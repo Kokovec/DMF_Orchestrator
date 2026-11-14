@@ -111,14 +111,16 @@ Keep it a name you control or a reserved one such as `.test`. Ansible maps the h
 
 ### 4. Create a production with SwitchFrame
 
-A production is one file in `workloads/`. The included `news-studio` has two test cameras, an A/V sync test source and a SwitchFrame vision mixer.
+A production is a workload, and every workload has an id: the name of its file in `workloads/`, or the design's id when it comes from DMF Toolkit. The commands below write it as `<workload-id>`. `WORKLOAD=` always takes a workload id, never the facility's name.
+
+The repo includes one example, `news-studio` ([workloads/news-studio.yaml](workloads/news-studio.yaml)): two test cameras, an A/V sync test source and a SwitchFrame vision mixer. To try it, use `news-studio` as `<workload-id>`.
 
 A workload designed in DMF Toolkit arrives as published XML instead. See [Deploying from DMF Toolkit](#deploying-from-dmf-toolkit).
 
 ```bash
-make plan      WORKLOAD=news-studio   # check the design and capacity, show what will change
-make provision WORKLOAD=news-studio   # create the Flow Domain and start the Media Functions (sudo)
-make secrets                          # print the generated passwords
+make plan      WORKLOAD=<workload-id>   # check the design and capacity, show what will change
+make provision WORKLOAD=<workload-id>   # create the Flow Domain and start the Media Functions (sudo)
+make secrets                            # print the generated passwords
 ```
 
 `make secrets` shows sensitive values, so keep its output private.
@@ -128,30 +130,32 @@ make secrets                          # print the generated passwords
 On WSL, close any earlier DMF Chrome window, then run:
 
 ```bash
-make windows-browser WORKLOAD=news-studio
+make windows-browser WORKLOAD=<workload-id>
 ```
 
-The first time, Windows asks you to confirm trusting the facility's root certificate. On other machines, or for a browser inside WSL, run `make trust-ca`, or see [Viewing it](#viewing-it-wsl2), then open **https://news-studio.dmf.test/sso/login**.
+The first time, Windows asks you to confirm trusting the facility's root certificate. On other machines, or for a browser inside WSL, run `make trust-ca`, or see [Viewing it](#viewing-it-wsl2), then open **https://&lt;workload-id&gt;.dmf.test/sso/login**.
 
-Sign in as `director1` with the password from `make secrets`.
+Sign in as a user who has the director role in the workload (`director1` in the example), with the password from `make secrets`.
 
 ### 6. Check that it works
 
-1. The top bar shows **LIVE**, and Camera 1 is on programme.
+These checks describe the `news-studio` example. For your own design, use its own sources.
+
+1. The top bar shows **LIVE**, and the first source (Camera 1) is on programme.
 2. Click once anywhere in the page to enable sound, with your volume **low**: the test cameras send loud tones.
 3. Cut to **Sync test**: a white flash and a beep every second, together.
-4. Run `make status WORKLOAD=news-studio` and `make nmos-query` to see the pods, reservation usage and registered flows.
+4. Run `make status WORKLOAD=<workload-id>` and `make nmos-query` to see the pods, reservation usage and registered flows.
 
 Grafana is at https://grafana.dmf.test (dashboard **DMF / Media Workloads**).
 
-`make up WORKLOAD=news-studio` runs steps 3 and 4 up to `provision` in one go.
+`make up WORKLOAD=<workload-id>` runs steps 3 and 4 up to `provision` in one go.
 
 ### Day to day
 
 ```bash
-make start WORKLOAD=news-studio    # start the facility, wait until on air, open Chrome
-make stop                          # stop it and free its memory
-make finalise WORKLOAD=news-studio # production over: archive to .state/archive/, tear down, free the Flow Domain (sudo)
+make start WORKLOAD=<workload-id>    # start the facility, wait until on air, open Chrome
+make stop                            # stop it and free its memory
+make finalise WORKLOAD=<workload-id> # production over: archive to .state/archive/, tear down, free the Flow Domain (sudo)
 ```
 
 On WSL the facility does not start with WSL, so run `make start` after each WSL restart. After `make hosts` it is already running. `make start NO_BROWSER=1` skips opening Chrome.
@@ -174,7 +178,7 @@ On WSL the facility does not start with WSL, so run `make start` after each WSL 
 
 ### Viewing it (WSL2)
 
-Preferred: `make windows-browser WORKLOAD=news-studio` (Chrome on Windows; see the WSL2 notes below).
+Preferred: `make windows-browser WORKLOAD=<workload-id>` (Chrome on Windows; see the WSL2 notes below).
 
 Alternative, a browser **inside WSL** (WSLg shows its window on the Windows desktop). It works, but decodes all video on WSL's CPUs:
 
@@ -184,7 +188,7 @@ wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable
 sudo apt-get install -y /tmp/chrome.deb
 mkdir -p ~/.pki/nssdb && { [ -f ~/.pki/nssdb/cert9.db ] || certutil -d sql:$HOME/.pki/nssdb -N --empty-password; }
 certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "DMF Local Root CA" -i .state/dmf-root-ca.crt
-google-chrome https://news-studio.dmf.test/sso/login &
+google-chrome https://<workload-id>.dmf.test/sso/login &   # your workload's id
 ```
 
 Click once anywhere in the UI to enable sound (browser autoplay policy). You hear the **programme** mix. Channels default to AFV (audio follows video), so BARS/BLACK on programme means silence. **PFL** (pre-fade listen) solos a source regardless of its fader or mute; that's what pre-fade means, so mute and fader changes are only audible on programme. The demo cameras send loud sine tones (100 Hz left, 200 Hz right, about −2 dBFS), so start with your volume low.
@@ -195,9 +199,9 @@ The top bar shows **LIVE** when WebTransport is connected. **POLLING** means the
 
 ### WSL2 notes
 
-- **Browser on Windows (recommended):** `make windows-browser WORKLOAD=news-studio` opens the UI in Chrome **on Windows**, so video decoding uses Windows' CPU and GPU instead of WSL's. In NAT mode Windows reaches WSL's own IP directly (TCP 443 and UDP for WebTransport). The launcher maps `*.dmf.test` to the current WSL IP for that Chrome profile only (no hosts-file or admin change), and imports the DMF root CA into your Windows user certificate store once (Windows asks you to confirm). WSL's IP changes on every WSL restart, so close that Chrome window and re-run the target afterwards.
+- **Browser on Windows (recommended):** `make windows-browser WORKLOAD=<workload-id>` opens the UI in Chrome **on Windows**, so video decoding uses Windows' CPU and GPU instead of WSL's. In NAT mode Windows reaches WSL's own IP directly (TCP 443 and UDP for WebTransport). The launcher maps `*.dmf.test` to the current WSL IP for that Chrome profile only (no hosts-file or admin change), and imports the DMF root CA into your Windows user certificate store once (Windows asks you to confirm). WSL's IP changes on every WSL restart, so close that Chrome window and re-run the target afterwards.
 - **Timing.** WSL2's clock is disciplined by Windows. The timing role detects this, skips PTP/NTP and **disables Ubuntu's `systemd-timesyncd`**. Left running, it fights Hyper-V time sync and steps the clock by seconds every ~30 s, which shows up as periodic video freezes and audio dropouts. Use real hardware with a PTP-capable NIC for ST 2059 timing (`dmf_ptp_interface`).
-- **Starting and stopping.** On WSL the facility does not start with WSL, so the machine stays free for other work. `make start WORKLOAD=…` starts k3s and the Flow Domains, waits until the workload is on air, then opens its UI in Chrome on Windows (`NO_BROWSER=1` skips this; the DevTools port stays on Windows localhost, for diagnostics); `make stop` ends everything and releases its memory. On each start the mixer waits for its input flows, restores source labels and puts the workload's first source on programme (the previous source is not remembered). Close the DMF Chrome window before `make start`: a running window keeps its old WSL IP and debug settings, and a tab left open across a SwitchFrame restart stays black until reloaded. Other hosts start with the OS; set `dmf_k3s_autostart` to change either default.
+- **Starting and stopping.** On WSL the facility does not start with WSL, so the machine stays free for other work. `make start WORKLOAD=<workload-id>` starts k3s and the Flow Domains, waits until the workload is on air, then opens its UI in Chrome on Windows (`NO_BROWSER=1` skips this; the DevTools port stays on Windows localhost, for diagnostics); `make stop` ends everything and releases its memory. On each start the mixer waits for its input flows, restores source labels and puts the workload's first source on programme (the previous source is not remembered). Close the DMF Chrome window before `make start`: a running window keeps its old WSL IP and debug settings, and a tab left open across a SwitchFrame restart stays black until reloaded. Other hosts start with the OS; set `dmf_k3s_autostart` to change either default.
 - **After rebuilding images,** `make images` then `make provision` restarts only the Media Functions whose image actually changed.
 - **Memory.** 16 GB is tight for the platform plus one workload (SwitchFrame alone may use up to `goMemLimit`, 6 GiB). During testing, running a second copy of the stack alongside it pushed the WSL VM over the edge. If you are short, set `enable_logging = false` (Loki/Alloy) or raise the WSL memory limit in `.wslconfig`.
 - k3s runs next to Docker without conflict. It uses its own containerd.
@@ -213,7 +217,7 @@ For PTP on real NICs, set `dmf_ptp_interface` per host (an inventory host var, o
 
 ## Productions are files
 
-A production is one file in `workloads/`. Copy [workloads/news-studio.yaml](workloads/news-studio.yaml) and change:
+A production is one file in `workloads/`. Copy the example, [workloads/news-studio.yaml](workloads/news-studio.yaml), to `workloads/<workload-id>.yaml` and change:
 
 | Field | Purpose |
 |---|---|
@@ -239,13 +243,13 @@ DMF_FACILITY=<path to .state/facility-local.json> npm run server
 
 Without `DMF_FACILITY` the toolkit offers everything, and the compiler refuses what doesn't fit at import instead.
 
-**2. Design and publish.** Save the workload in the toolkit. Every save is a new revision. The orchestrator reads the latest publishable one from `http://localhost:3001/api/workloads/<id>/published.xml`; the toolkit answers 422 with the reasons when a revision isn't publishable.
+**2. Design and publish.** Save the workload in the toolkit. Every save is a new revision. The orchestrator reads the latest publishable one from `http://localhost:3001/api/workloads/<workload-id>/published.xml`; the toolkit answers 422 with the reasons when a revision isn't publishable.
 
-**3. Set the secrets it names.** SRT passphrases and RTMP stream keys are references in the XML, never values. Set each value once; it is prompted without echo and kept in `.state/secrets/<id>.yaml` (mode 600):
+**3. Set the secrets it names.** SRT passphrases and RTMP stream keys are references in the XML, never values. Set each value once; it is prompted without echo and kept in `.state/secrets/<workload-id>.yaml` (mode 600):
 
 ```bash
-make import XML=http://localhost:3001/api/workloads/<id>/published.xml   # compile only: lists missing secrets
-make secret-set WORKLOAD=<id> NAME=<secret name>
+make import XML=http://localhost:3001/api/workloads/<workload-id>/published.xml   # compile only: lists missing secrets
+make secret-set WORKLOAD=<workload-id> NAME=<secret name>
 ```
 
 `make import` also prints the allocation: UID, QUIC port, SRT port and hostname. An SRT listener source is reached at `srt://<host>:<srtPort>?streamid=<its stream ID>`.
@@ -253,8 +257,8 @@ make secret-set WORKLOAD=<id> NAME=<secret name>
 **4. Deploy.**
 
 ```bash
-make deploy XML=http://localhost:3001/api/workloads/<id>/published.xml   # import, plan, provision (sudo)
-make start WORKLOAD=<id>                                                 # on WSL, after a restart
+make deploy XML=http://localhost:3001/api/workloads/<workload-id>/published.xml   # import, plan, provision (sudo)
+make start WORKLOAD=<workload-id>                                                 # on WSL, after a restart
 ```
 
 The compiler refuses a design the facility can't run before anything changes: an option without its capability (ST 2110, MoQ, SRT listener output and the rest in [02-switchframe-options.md](docs/orchestration/02-switchframe-options.md)), a missing secret, a format the product doesn't have, or a uid or flow ID another workload uses. It names each option and reports every problem at once.
@@ -267,14 +271,14 @@ The compiler refuses a design the facility can't run before anything changes: an
 | Format, encoder, frame-rate conversion, preview or relay, sources, features | SwitchFrame restarts with new arguments; the reconciler applies everything again |
 | Any volume size (state, cache, recordings), or recording on to off | Refused at plan: `local-path` can't resize. Finalise and deploy again |
 
-**6. Finish.** `make finalise WORKLOAD=<id>` copies recordings to `.state/archive/<id>-<time>/recordings` before anything is destroyed, archives the design (YAML, config and source XML), logs, events, resources and SwitchFrame's state, then tears down and releases the allocation. After a successful teardown it also deletes the workload's secrets file and Terraform plan file, which hold secret values and are never archived, so deploying the same id again means setting its secrets again.
+**6. Finish.** `make finalise WORKLOAD=<workload-id>` copies recordings to `.state/archive/<workload-id>-<time>/recordings` before anything is destroyed, archives the design (YAML, config and source XML), logs, events, resources and SwitchFrame's state, then tears down and releases the allocation. After a successful teardown it also deletes the workload's secrets file and Terraform plan file, which hold secret values and are never archived, so deploying the same id again means setting its secrets again.
 
 Things to know:
 
 - **One compiled workload at a time on a 16-CPU host.** Media Functions are real time, so a workload reserves the sum of its pods' CPU limits: about 9 to 11 CPUs at the default SwitchFrame size. `make plan` refuses one that doesn't fit.
 - **Use 1080p or 2160p.** At the pinned commit, SwitchFrame's MXL path refuses frame widths not divisible by 6, so 720p can't carry MXL sources or the MXL programme output. The compiler refuses 720p in a design that has either, naming `engine.engine.resolution`.
 - **SRT listener sources** exist only while their encoder is connected. Their settings are applied on every connection, because SwitchFrame resets them.
-- Workloads compiled from XML live in `workloads/generated/` and are git-ignored. `scripts/workload-file.sh <id>` resolves an id to its file; a hand-written and a generated file with the same id is an error.
+- Workloads compiled from XML live in `workloads/generated/` and are git-ignored. `scripts/workload-file.sh <workload-id>` resolves an id to its file; a hand-written and a generated file with the same id is an error.
 
 ### Runbook: clear the facility and deploy a toolkit design
 
@@ -286,7 +290,7 @@ Values used below:
 
 | Placeholder | What it is | Where to find it |
 |---|---|---|
-| `<id>` | The workload's id in the toolkit | Step 4 |
+| `<workload-id>` | The workload's id: the design's id in the toolkit | Step 4 |
 | `<old-id>` | A workload deployed earlier | Step 1 |
 | `<user>` | A Keycloak user to give a role | `director1`, `audio1`, `graphics1` or `viewer1`, which `make platform` creates. Passwords: `make secrets` |
 | `<repo>` | Absolute path of this checkout | `pwd` in this directory |
@@ -344,14 +348,14 @@ curl -s http://localhost:3001/api/workloads | python3 -m json.tool | grep '"id"'
 **5. Compile and set secrets.** Compiling first lists any secrets the design needs (SRT passphrases, RTMP stream keys) without changing anything:
 
 ```bash
-make import XML=http://localhost:3001/api/workloads/<id>/published.xml
-make secret-set WORKLOAD=<id> NAME=<secret name>    # once per secret it names; prompted, not echoed
+make import XML=http://localhost:3001/api/workloads/<workload-id>/published.xml
+make secret-set WORKLOAD=<workload-id> NAME=<secret name>    # once per secret it names; prompted, not echoed
 ```
 
 **6. Deploy** (sudo for provision):
 
 ```bash
-make deploy XML=http://localhost:3001/api/workloads/<id>/published.xml
+make deploy XML=http://localhost:3001/api/workloads/<workload-id>/published.xml
 ```
 
 The first start of a workload writes about 16 GiB of ST-map tables to its `/cache` volume, which takes a few minutes. Until it finishes, the picture stutters and MXL sources can drop out. Later starts reuse the tables.
@@ -359,7 +363,7 @@ The first start of a workload writes about 16 GiB of ST-map tables to its `/cach
 **7. Open it and sign in.**
 
 ```bash
-make windows-browser WORKLOAD=<id>           # on WSL; elsewhere open https://<id>.dmf.test/sso/login
+make windows-browser WORKLOAD=<workload-id>           # on WSL; elsewhere open https://<workload-id>.dmf.test/sso/login
 ```
 
 Sign in as the `<user>` you gave the director role. Then check it as in [Check that it works](#6-check-that-it-works).
@@ -367,15 +371,15 @@ Sign in as the `<user>` you gave the director role. Then check it as in [Check t
 **Repeating it.**
 
 - **A changed design:** save and publish a new revision in the toolkit, then run step 6 again. Only what changed restarts.
-- **After a WSL restart or `make stop`:** run `make start`. It starts k3s and the only deployed workload, waits for sign-in and opens the browser. Name it with `WORKLOAD=<id>` when more than one is deployed.
+- **After a WSL restart or `make stop`:** run `make start`. It starts k3s and the only deployed workload, waits for sign-in and opens the browser. Name it with `WORKLOAD=<workload-id>` when more than one is deployed.
 - **Starting over:** finalise (step 2) and run steps 3 to 7 again.
-- **A finalised design:** deploy it again from its archive with `make deploy XML=.state/archive/<id>-<time>/source.xml`, setting its secrets again first. Its flow IDs come from the design, so they stay the same. Its UID and ports are allocated afresh: the lowest free values.
+- **A finalised design:** deploy it again from its archive with `make deploy XML=.state/archive/<workload-id>-<time>/source.xml`, setting its secrets again first. Its flow IDs come from the design, so they stay the same. Its UID and ports are allocated afresh: the lowest free values.
 
 Problems you can hit on the way:
 
 | Symptom | Cause and fix |
 |---|---|
-| `bash: id: No such file or directory` | `<id>` was typed literally. Use the real id from step 4 |
+| `bash: workload-id: No such file or directory` | `<workload-id>` was typed literally. Use the real id from step 4 |
 | `The facility is not running (Kubernetes doesn't answer)` | Step 1 |
 | `failed to perform initial login to Keycloak ... 503` | Keycloak wasn't ready. The plan now waits up to 5 minutes for it, so this means Keycloak itself is failing: `kubectl -n dmf-identity get pods` |
 | `Access role member ... is not a user in Keycloak's dmf realm` | Use an existing `<user>` in the design's access roles, publish, deploy again |
@@ -406,7 +410,7 @@ Status refreshes every 5 seconds. A check that fails shows as unknown with its e
 | Panel | Shows | Buttons |
 |---|---|---|
 | **Facility** | k3s, Kubernetes, Keycloak and the NMOS registry. Reserved CPU and memory against what the host has, the same numbers `make plan` uses. Whether this distro is bind-mounted for the toolkit, and whether the facility profile is exported and up to date | **Start**, **Stop**, **Mount for toolkit**, **Export profile** |
-| **Workloads** | Every workload: state, hand-written or compiled, revision, pods ready, reserved CPU | **Open UI**, **Status**, **Deploy** or **Update**, **Finalise** |
+| **Workloads** | Every workload: state, hand-written or compiled, revision, pods ready, reserved CPU. A hand-written file that isn't deployed, such as the `news-studio` example, appears once it's provisioned | **Open UI**, **Status**, **Deploy** or **Update**, **Finalise** |
 | **Toolkit designs** | The profile the toolkit server loaded (or a warning that it has none), then each design's latest revision: publishable, or its problems. A deployed design says which revision is deployed and whether a newer one is waiting | **Deploy**, or **Update** for one that's deployed |
 | **Archive** | Each finalised run in `.state/archive/`, with its time | **Redeploy** |
 | **Deploy** | Appears while a deploy runs: its steps (Import, Secrets, Plan, Review, Provision) and where it is | Depends on the step |
@@ -451,7 +455,7 @@ When it's done, press **Open UI** on the workload and sign in as in [Open it](#5
 - **Hover over a button to see the exact command it runs.** Its confirmation shows the command too. Finalise asks you to type the workload id.
 - **sudo passwords and secret values are typed only in the terminal.** The console never sees or stores them, and never writes terminal output to disk. It keeps the last 2,000 lines in memory, so reloading the page brings the terminal back. Restarting the console clears them.
 - **A deploy runs in the console server, not in the page.** Reloading keeps it. The review dialog opens in every browser showing the console, and the first **Provision** wins. Stopping the console loses an open deploy, but the files stay, so press **Deploy** again.
-- **Start, Stop and Finalise are refused while a deploy is open.** Finish or cancel it first.
+- **Start, Stop and Finalise work while a deploy is open.** If it had already planned, it goes back to the plan step: press **Run plan again** once the command has finished. Finalising the workload being deployed cancels the deploy. Another Deploy waits until the open one is finished or cancelled.
 - **Some things have no button.** `make secrets`, `make platform`, `make images` and the other setup targets stay in the terminal: type them there.
 - **"deployed (revision not labelled)"** means the workload was provisioned before the console's revision label existed. Its next provision adds the label.
 
@@ -510,10 +514,10 @@ Three more patches fix timing defects found with the `sync` source (`mxl-syncsrc
 | Task | Command |
 |---|---|
 | Facility state and lifecycle in a web page | `make console` |
-| Status across layers | `make status WORKLOAD=news-studio` |
+| Status across layers | `make status WORKLOAD=<workload-id>` |
 | Flows in the NMOS registry | `make nmos-query` |
 | Credentials | `make secrets` |
-| Break-glass SwitchFrame token | `cd terraform/stacks/workload && terraform workspace select news-studio && terraform output -raw switchframe_api_token` |
+| Break-glass SwitchFrame token | `cd terraform/stacks/workload && terraform workspace select <workload-id> && terraform output -raw switchframe_api_token` |
 | Static checks (no cluster needed) | `make lint` |
 | Remove platform and infrastructure | `make finalise` each workload, then `make destroy` |
 

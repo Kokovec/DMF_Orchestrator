@@ -197,7 +197,8 @@ class Status:
         ids = sorted(i for i in ids if WORKLOAD_ID.match(i))
 
         entries = await asyncio.gather(*(self.workload(i, cluster if kube_up else None) for i in ids))
-        out = {"state": "ok", "items": list(entries)}
+        # A hand-written file that isn't deployed is an example to copy, such as news-studio: not listed.
+        out = {"state": "ok", "items": [w for w in entries if w["deployed"] or w.get("kind") != "hand-written"]}
         if not kube_up:
             out["error"] = f"Kubernetes: {cluster.get('error')}"
         return out

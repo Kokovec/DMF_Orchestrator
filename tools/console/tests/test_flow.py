@@ -1,7 +1,7 @@
 """The deploy flow (spec 05, Tests: Deploy flow), driven through the console's HTTP API and its
 real terminal against a fake `make` that writes the two JSON files: a design needing one secret,
-a refused design, stale or missing files, failures and retries, Redeploy, and the lifecycle
-buttons' guards. The console reads the files, never the terminal's output."""
+a refused design, stale or missing files, failures and retries, Redeploy, and what the lifecycle
+buttons do to an open deploy. The console reads the files, never the terminal's output."""
 import asyncio
 import json
 import os
@@ -248,39 +248,51 @@ class FlowTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(code, 400, bad)
 
     async def test_one_flow_and_lifecycle_guards(self):
-        self.scenario({"import": [{"last_import": IMPORT_OK}], "plan": [{"plan_summary": SUMMARY}]})
+        self.scenario({"import": [{"last_import": IMPORT_OK}], "plan": [{"plan_summary": SUMMARY}] * 3})
         await self.post("/api/flow", {"op": "deploy", "design": "studio-a"})
         await self.at("review")
         code, body = await self.post("/api/flow", {"op": "deploy", "design": "studio-a"})
         self.assertEqual(code, 409)
         self.assertIn("still open", body["reason"])
-        for action in ("stop", "start"):
-            code, body = await self.post("/api/action", {"action": action})
-            self.assertEqual(code, 409, action)
-        code, _ = await self.post("/api/action", {"action": "finalise", "workload": "studio-a", "confirm": "studio-a"})
-        self.assertEqual(code, 409)
         code, _ = await self.post("/api/action", {"action": "status", "workload": "studio-a"})
-        self.assertEqual(code, 200)  # read-only actions stay open
+        self.assertEqual(code, 200)  # read-only actions leave the deploy alone
         await self.wait(lambda: not self.console.terminal.action)
-        await self.post("/api/flow", {"op": "cancel"})
+        self.assertEqual(self.console.flow.snapshot()["step"], "review")
+
+        # Start, Stop and Finalise of another workload run with a deploy open; its plan is stale.
+        for action, workload in (("stop", None), ("start", None), ("finalise", "studio-b")):
+            body = {"action": action, "workload": workload, "confirm": workload}
+            code, out = await self.post("/api/action", body)
+            self.assertEqual(code, 200, action)
+            self.assertEqual(out["flow"]["step"], "plan", action)
+            self.assertIsNone(out["flow"]["summary"])
+            self.assertIn("run the plan again", out["flow"]["message"])
+            await self.wait(lambda: not self.console.terminal.action)
+            code, _ = await self.post("/api/flow", {"op": "provision"})
+            self.assertEqual(code, 409)  # the stale plan can't be provisioned
+            await self.post("/api/flow", {"op": "run"})
+            await self.at("review")
+
+        # Before a plan exists, Start changes nothing in the deploy.
+        self.console.flow.state.update(step="plan", summary=None, error="make plan failed (exit 2)")
+        code, out = await self.post("/api/action", {"action": "start"})
+        self.assertEqual((code, out["flow"]["step"], out["flow"]["error"]), (200, "plan", "make plan failed (exit 2)"))
+        await self.wait(lambda: not self.console.terminal.action)
 
         code, body = await self.post("/api/action", {"action": "finalise", "workload": "studio-a"})
         self.assertEqual(code, 400)
         self.assertIn("type the workload id", body["reason"])
         code, _ = await self.post("/api/action", {"action": "finalise", "workload": "studio-a", "confirm": "studio-b"})
         self.assertEqual(code, 400)
-        await self.wait(lambda: self.console.terminal.shell_idle() and not self.console.terminal.action)
-        code, body = await self.post("/api/action", {"action": "finalise", "workload": "studio-a", "confirm": "studio-a"})
-        self.assertEqual((code, body["command"]), (200, "make finalise WORKLOAD=studio-a"))
-        await self.wait(lambda: not self.console.terminal.action)
-        code, body = await self.post("/api/action", {"action": "stop"})
-        self.assertEqual((code, body["command"]), (200, "make stop"))
-        await self.wait(lambda: not self.console.terminal.action)
-        code, body = await self.post("/api/action", {"action": "start"})
-        self.assertEqual((code, body["command"]), (200, "make start NO_BROWSER=1"))
+        self.assertTrue(self.console.flow.active())
+        # Finalising the deploy's own workload cancels it: its secrets and generated files go.
+        code, out = await self.post("/api/action", {"action": "finalise", "workload": "studio-a", "confirm": "studio-a"})
+        self.assertEqual((code, out["command"]), (200, "make finalise WORKLOAD=studio-a"))
+        self.assertEqual(out["flow"]["step"], "cancelled")
         await self.wait(lambda: not self.console.terminal.action)
         self.assertEqual([c for c in self.calls() if c[0] in ("finalise", "stop", "start")],
-                         [["finalise", "WORKLOAD=studio-a"], ["stop"], ["start", "NO_BROWSER=1"]])
+                         [["stop"], ["start", "NO_BROWSER=1"], ["finalise", "WORKLOAD=studio-b"],
+                          ["start", "NO_BROWSER=1"], ["finalise", "WORKLOAD=studio-a"]])
 
     async def test_busy_terminal_leaves_a_run_button(self):
         self.console.terminal.write("half typed")

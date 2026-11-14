@@ -79,7 +79,15 @@ function commandFor(action, workload) {
 }
 
 const flowOpen = () => state.flow && !['done', 'refused', 'cancelled'].includes(state.flow.step);
-const LIFECYCLE = new Set(['start', 'stop', 'finalise']);
+
+// What Start, Stop or Finalise does to an open deploy (flow.py, facility_changed).
+function flowNote(action, workload) {
+  const f = state.flow;
+  if (!flowOpen()) return null;
+  if (action === 'finalise' && workload === f.id) return `The open deploy of ${f.id} is cancelled: finalise deletes the secrets and generated files it uses.`;
+  if (['review', 'provision'].includes(f.step)) return `The open deploy of ${f.id} goes back to its plan step: plan again once this has finished.`;
+  return null;
+}
 
 // Resolves true when the user confirms. text: a string or nodes.
 async function confirmDialog(title, text, command, ok = 'Run in the terminal') {
@@ -107,7 +115,8 @@ const CONFIRM = {
     return { title: 'Stop the facility',
       text: [ws.length ? `All of these stop with it: ${ws.map((w) => `${w.id} (${w.state})`).join(', ')}.`
         : 'No workload is deployed.',
-      ' make stop stops k3s, every pod and the Flow Domains, and releases their memory. Volumes, secrets and allocations stay; Start brings the workloads back. sudo asks for your password in the terminal.'] };
+      ' make stop stops k3s, every pod and the Flow Domains, and releases their memory. Volumes, secrets and allocations stay; Start brings the workloads back. sudo asks for your password in the terminal.',
+      flowNote('stop') ? el('div', { class: 'warnbox' }, flowNote('stop')) : null] };
   },
 };
 
@@ -139,6 +148,9 @@ async function finaliseDialog(id, command) {
   const d = $('finalise');
   $('fin-id').textContent = id;
   $('fin-cmd').textContent = command;
+  const note = flowNote('finalise', id);
+  $('fin-flow').hidden = !note;
+  $('fin-flow').textContent = note || '';
   const input = $('fin-input');
   input.value = '';
   $('fin-ok').disabled = true;
@@ -279,9 +291,8 @@ document.addEventListener('click', (ev) => {
 
 function actButton(label, action, workload, extraDisabled, why) {
   const cmd = commandFor(action, workload);
-  const locked = LIFECYCLE.has(action) && flowOpen();
-  const disabled = !state.connected || !!state.running || !!extraDisabled || locked;
-  const reason = locked ? 'A deploy is open below: finish or cancel it first.' : extraDisabled ? why : '';
+  const disabled = !state.connected || !!state.running || !!extraDisabled;
+  const reason = extraDisabled ? why : '';
   return el('button', { class: 'act', dataset: { action, workload }, disabled,
     title: reason ? `${reason}\n${cmd}` : cmd }, label);
 }
@@ -323,8 +334,7 @@ function render() {
     const a = b.dataset.action;
     const why = a === 'mount' && m && m.state === 'ok' ? 'Already mounted.'
       : a === 'start' && k3sUp && kubeUp ? 'The facility is running.'
-        : a === 'stop' && f.k3s && f.k3s.state === 'bad' ? 'k3s is already stopped.'
-          : LIFECYCLE.has(a) && flowOpen() ? 'A deploy is open below: finish or cancel it first.' : '';
+        : a === 'stop' && f.k3s && f.k3s.state === 'bad' ? 'k3s is already stopped.' : '';
     b.disabled = !state.connected || !!state.running || !!why;
     b.title = why ? `${why}\n${commandFor(a)}` : commandFor(a);
   }

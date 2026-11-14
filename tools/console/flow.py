@@ -102,6 +102,25 @@ class Flow:
         else:
             raise FlowError(f"unknown operation {op!r}")
 
+    def facility_changed(self, action, workload=None):
+        """Start, Stop or Finalise was just typed while this deploy is open. The deploy stays open,
+        but a plan it made no longer describes the facility, and finalising its own workload deletes
+        the secrets and generated files it relies on."""
+        st = self.state
+        if not self.active():
+            return
+        if action == "finalise" and workload and workload == st["id"]:
+            st.update(step="cancelled", pending=False, error=None,
+                      message=f"Cancelled: finalise deletes {workload}'s secrets and generated files. "
+                              "Deploy it again when finalise has finished.")
+        elif st["step"] in ("review", "provision"):
+            st.update(step="plan", summary=None, pending=False, error=None,
+                      message=f"make {action} changes the facility this plan was made against. "
+                              "When it has finished, run the plan again.")
+        else:
+            return
+        self._emit()
+
     # ---- running steps ----
 
     def command(self, step):

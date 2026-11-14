@@ -95,12 +95,11 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("CPU reserved 11.7 / 16", f["capacity"]["text"])
 
         w = self.by_id(snap)
-        self.assertEqual(sorted(w), ["news-studio", "old-one", "studio-a"])
+        self.assertEqual(sorted(w), ["old-one", "studio-a"])  # news-studio: hand-written, not deployed
         a = w["studio-a"]
         self.assertEqual((a["kind"], a["revision"], a["state"], a["cpu"]), ("compiled", 3, "on air", "11"))
         self.assertEqual(a["pods"], {"ready": 2, "total": 2})
         self.assertEqual(a["reconciler"], {"pending": 0, "failed": 0, "api_up": 1})
-        self.assertEqual((w["news-studio"]["kind"], w["news-studio"]["state"]), ("hand-written", "not deployed"))
         self.assertEqual(w["old-one"]["kind"], "no file")  # only in allocations.json
         self.assertIn("no workload old-one", w["old-one"]["errors"][0])
 
@@ -156,7 +155,11 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((f["profile"]["state"], f["profile"]["text"]), ("bad", "older than facility/local.yaml"))
         w = self.by_id(snap)
         self.assertEqual((w["studio-a"]["state"], w["studio-a"]["deployed_from"]), ("deployed, stopped", "Flow Domain unit"))
-        self.assertEqual(w["news-studio"]["state"], "not deployed")
+        self.assertNotIn("news-studio", w)
+        # Deployed, a hand-written workload is listed like any other.
+        (self.repo.systemd / mount_unit("/var/lib/dmf/mxl/news-studio")).write_text("[Mount]\n")
+        w = self.by_id(await self.collect())
+        self.assertEqual((w["news-studio"]["kind"], w["news-studio"]["state"]), ("hand-written", "deployed, stopped"))
         self.assertIn("was refused", snap["workloads"]["error"])
         self.assertEqual((snap["designs"]["state"], snap["designs"]["text"]),
                          ("bad", f"toolkit API: not reachable on :{self.port}"))

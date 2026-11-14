@@ -57,7 +57,7 @@ check shows as unknown with its error, never blocks the others, and never fails 
 | Capacity | `ansible/scripts/capacity.py`, as `make plan` runs it, for reserved CPU and memory against allocatable. Show the same numbers the plan uses |
 | Toolkit mount | `findmnt` shows `/mnt/wsl/instances/$WSL_DISTRO_NAME` bind-mounted from `/` |
 | Profile | `.state/facility-<name>.json` exists and is newer than `facility/<name>.yaml` |
-| Workloads | The union of namespaces labelled `dmf.ebu.ch/workload`, `workloads/*.yaml`, `workloads/generated/*.yaml` and `.state/allocations.json`. Per workload: hand-written or compiled; revision (from the generated header); deployed or not; pods ready; on air (reconciler metrics `dmf_reconcile_api_up`, `_pending`, `_failed`, read with `kubectl exec` as `facility.sh` reads the API); reserved CPU (its ResourceQuota) |
+| Workloads | The union of namespaces labelled `dmf.ebu.ch/workload`, `workloads/*.yaml`, `workloads/generated/*.yaml` and `.state/allocations.json`, except a hand-written workload that isn't deployed: that's an example to copy, such as `news-studio` (changed 2026-11-14). Per workload: hand-written or compiled; revision (from the generated header); deployed or not; pods ready; on air (reconciler metrics `dmf_reconcile_api_up`, `_pending`, `_failed`, read with `kubectl exec` as `facility.sh` reads the API); reserved CPU (its ResourceQuota) |
 | Toolkit designs | `GET http://localhost:3001/api/facility` first: show the profile name it loaded, or a warning that it runs without one, so it offers options this facility can't run (stage 9). Then `GET http://localhost:3001/api/workloads`; for each, `published.xml` answering 200 (publishable) or 422 (show its reasons). Mark a design whose id is deployed, and whether its latest revision is newer than the deployed one. The deployed revision is the namespace's `dmf.ebu.ch/revision` label, which Terraform sets from the generated header (stage 9), not the compiled file's header: an import that wasn't provisioned changes the file but not what's running |
 | Archive | Directories in `.state/archive/`, with the id, time and whether `source.xml` exists |
 
@@ -113,8 +113,19 @@ Ruled in the stage 9 review (2026-11-13):
 - The deploy runs in the server, not the page. Its review dialog opens in every connected browser,
   and the first **Provision** wins: the server refuses a second. A reload keeps the deploy open, but
   restarting the console loses it; the files stay, and the user starts the deploy again.
-- Start, Stop and Finalise are refused while a deploy is open. The server checks Finalise's typed id
-  as well as the page.
+- The server checks Finalise's typed id as well as the page.
+
+Changed on 2026-11-14 (it was: Start, Stop and Finalise are refused while a deploy is open). A plan
+that failed because the facility was down told the user to run `make start`, and the Start button
+was locked at that moment. Every lifecycle action now works from the page:
+
+- Start, Stop and Finalise run with a deploy open. Deploy, Update and Redeploy still wait for it: one
+  deploy at a time.
+- If the deploy has a plan (review, or a provision that couldn't start), it goes back to the plan
+  step and drops the summary, so it can't provision a plan made against a different facility.
+  Before that point it's unchanged.
+- Finalise of the deploy's own workload cancels the deploy, because finalise deletes the secrets and
+  generated files it uses. The Stop and Finalise dialogs say which of these will happen.
 
 ## Changes to existing code
 
