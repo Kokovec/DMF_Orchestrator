@@ -1,10 +1,10 @@
 # Stage 1b: toolkit corrections
 
-Run in the same Claude Code session as stage 1 if it's still open, because its acceptance scripts are in that session's scratchpad. Otherwise use a fresh session in distro `Ubuntu`, working directory `/home/dansi/DMF_Toolkit`.
+Run in the same Claude Code session as stage 1 if it's still open, because its acceptance scripts are in that session's scratchpad. Otherwise use a fresh session in distro `Ubuntu`, working directory `~/DMF_Toolkit`.
 
 ---
 
-Stage 1 of the DMF Toolkit work is reviewed. Its changes are uncommitted in this working tree. These are the decisions on what it reported. The spec has been updated: re-read `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/docs/orchestration/03-toolkit-spec.md` (read-only), sections 2, 3, 4, 5 and 7. Follow `CLAUDE.md` and `docs/design-rules.md`, including updating rules and the decision log.
+Stage 1 of the DMF Toolkit work is reviewed. Its changes are uncommitted in this working tree. These are the decisions on what it reported. The spec has been updated: re-read `/mnt/wsl/instances/Ubuntu-24.04/home/$USER/switchframe-dmf/docs/orchestration/03-toolkit-spec.md` (read-only), sections 2, 3, 4, 5 and 7. Follow `CLAUDE.md` and `docs/design-rules.md`, including updating rules and the decision log.
 
 Node 24: `export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"`.
 

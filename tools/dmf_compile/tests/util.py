@@ -1,4 +1,5 @@
 """Shared test helpers: a throwaway repo, XML edits, strict JSON equality."""
+import getpass
 import io
 import os
 import shutil
@@ -18,7 +19,8 @@ REPO = Path(__file__).resolve().parents[3]
 STUDIO_A = REPO / "examples" / "studio-a.workload.xml"
 GOLDEN = Path(__file__).resolve().parent / "golden"
 TOOLKIT_FIXTURES = Path(os.environ.get(
-    "DMF_TOOLKIT_FIXTURES", "/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit/scripts/fixtures"))
+    "DMF_TOOLKIT_FIXTURES",
+    f"/mnt/wsl/instances/Ubuntu/home/{getpass.getuser()}/DMF_Toolkit/scripts/fixtures"))
 NS = reader.NS
 UID_NAMESPACE = uuid.UUID("9e6d3b0a-7c1f-5d4e-8a2b-1f0c3d5e7a9b")  # 01-contract.md, Flow identity
 ET.register_namespace("", NS)

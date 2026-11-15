@@ -1,6 +1,6 @@
 # Stage 9: facility console, actions and deploy
 
-Run in Claude Code in distro `Ubuntu-24.04`, working directory `/home/dansi/switchframe-dmf`. Requires stage 8. Needs the facility running, and the toolkit server with a publishable design.
+Run in Claude Code in distro `Ubuntu-24.04`, working directory `~/switchframe-dmf`. Requires stage 8. Needs the facility running, and the toolkit server with a publishable design.
 
 ---
 

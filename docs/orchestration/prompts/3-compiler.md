@@ -1,6 +1,6 @@
 # Stage 3: offline compiler
 
-Run in Claude Code in distro `Ubuntu-24.04`, working directory `/home/dansi/switchframe-dmf`. Requires stage 2's XML. No cluster needed.
+Run in Claude Code in distro `Ubuntu-24.04`, working directory `~/switchframe-dmf`. Requires stage 2's XML. No cluster needed.
 
 ---
 
@@ -10,7 +10,7 @@ Read first:
 1. `docs/orchestration/README.md`, `01-contract.md`, `02-switchframe-options.md`, `04-orchestrator-spec.md`
 2. `schemas/dmf-workload-v1.xsd`, `examples/studio-a.workload.xml`
 3. `workloads/news-studio.yaml`, `terraform/stacks/workload/main.tf`, `ansible/playbooks/workload-plan.yml`, `ansible/scripts/capacity.py`, `scripts/validate.sh`
-4. `examples/studio-a.workload.xml` is real toolkit output. The toolkit's fixtures are in `/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit/scripts/fixtures/` (read-only): `every-value.workload.xml` covers every value type, and each `.workload.xml` has a `.published.json` twin to test your XML reader against.
+4. `examples/studio-a.workload.xml` is real toolkit output. The toolkit's fixtures are in `/mnt/wsl/instances/Ubuntu/home/$USER/DMF_Toolkit/scripts/fixtures/` (read-only): `every-value.workload.xml` covers every value type, and each `.workload.xml` has a `.published.json` twin to test your XML reader against.
 
 Build, as in `04-orchestrator-spec.md`:
 - `tools/dmf_compile/` with `reader`, `facility`, `allocate`, `sizing`, `emit`, and `products/switchframe.py`, `products/dmf_mxl.py`

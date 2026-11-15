@@ -1,6 +1,6 @@
 # Stage 2: toolkit XML output
 
-Run in Claude Code in distro `Ubuntu`, working directory `/home/dansi/DMF_Toolkit`. Requires stage 1b.
+Run in Claude Code in distro `Ubuntu`, working directory `~/DMF_Toolkit`. Requires stage 1b.
 
 ---
 
@@ -8,7 +8,7 @@ You're working on DMF Toolkit, a configurator for EBU Dynamic Media Facility wor
 
 Read first:
 1. `CLAUDE.md` and `docs/design-rules.md` in this repo. Follow their conventions, including updating the rule and decision log in the same change.
-2. In `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/` (read-only; if it isn't visible, stop and tell me): `docs/orchestration/01-contract.md`, section 9 of `docs/orchestration/03-toolkit-spec.md`, `schemas/dmf-workload-v1.xsd`, and `examples/studio-a.workload.xml`.
+2. In `/mnt/wsl/instances/Ubuntu-24.04/home/$USER/switchframe-dmf/` (read-only; if it isn't visible, stop and tell me): `docs/orchestration/01-contract.md`, section 9 of `docs/orchestration/03-toolkit-spec.md`, `schemas/dmf-workload-v1.xsd`, and `examples/studio-a.workload.xml`.
 
 Node 24: `export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"`.
 

@@ -1,6 +1,6 @@
 # Stage 1: toolkit model and SwitchFrame options
 
-Run in Claude Code in distro `Ubuntu`, working directory `/home/dansi/DMF_Toolkit`.
+Run in Claude Code in distro `Ubuntu`, working directory `~/DMF_Toolkit`.
 
 ---
 
@@ -8,7 +8,7 @@ You're working on DMF Toolkit, a configurator for EBU Dynamic Media Facility wor
 
 Read first, in this order:
 1. `CLAUDE.md` and `docs/design-rules.md` in this repo. Follow their conventions, including updating the rule and decision log in the same change.
-2. The definition, in the orchestrator repo: `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/docs/orchestration/` — `README.md`, `02-switchframe-options.md`, and `03-toolkit-spec.md`. Treat these as read-only. If that path isn't visible from this distro, stop and tell me.
+2. The definition, in the orchestrator repo: `/mnt/wsl/instances/Ubuntu-24.04/home/$USER/switchframe-dmf/docs/orchestration/` — `README.md`, `02-switchframe-options.md`, and `03-toolkit-spec.md`. Treat these as read-only. If that path isn't visible from this distro, stop and tell me.
 
 Node 24 isn't on `PATH` in non-interactive shells. Use `export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"`.
 

@@ -1,6 +1,6 @@
 # Stage 8: facility console, status and terminal
 
-Run in Claude Code in distro `Ubuntu-24.04`, working directory `/home/dansi/switchframe-dmf`. Requires stage 7. The facility can be running or stopped: this stage changes nothing live.
+Run in Claude Code in distro `Ubuntu-24.04`, working directory `~/switchframe-dmf`. Requires stage 7. The facility can be running or stopped: this stage changes nothing live.
 
 ---
 

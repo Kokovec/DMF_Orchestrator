@@ -1,6 +1,6 @@
 # Stage 5: reconciler, secrets, real I/O
 
-Run in Claude Code in distro `Ubuntu-24.04`, working directory `/home/dansi/switchframe-dmf`. Requires stage 4. Needs the facility running.
+Run in Claude Code in distro `Ubuntu-24.04`, working directory `~/switchframe-dmf`. Requires stage 4. Needs the facility running.
 
 ---
 

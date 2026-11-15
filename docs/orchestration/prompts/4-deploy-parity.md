@@ -1,6 +1,6 @@
 # Stage 4: deploy from XML, with parity
 
-Run in Claude Code in distro `Ubuntu-24.04`, working directory `/home/dansi/switchframe-dmf`. Requires stage 3. Needs the facility running.
+Run in Claude Code in distro `Ubuntu-24.04`, working directory `~/switchframe-dmf`. Requires stage 3. Needs the facility running.
 
 ---
 

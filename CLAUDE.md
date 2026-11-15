@@ -6,8 +6,8 @@ Orchestrates a local EBU DMF-aligned k3s facility: deploys workloads published a
 
 ## Environment
 
-- This repo: WSL distro `Ubuntu-24.04`, `/home/dansi/DMF_Orchestrator`. Docker, k3s, Terraform, Helm and Ansible run here.
-- DMF Toolkit: distro `Ubuntu`, `/home/dansi/DMF_Toolkit`, at `/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit` only while that distro has bind-mounted itself there, which isn't automatic. If it's missing, ask the user to run this in `Ubuntu`: `sudo mkdir -p /mnt/wsl/instances/Ubuntu && sudo mount --bind / /mnt/wsl/instances/Ubuntu`. It has its own `CLAUDE.md`. Treat it as read-only from this repo.
+- This repo: WSL distro `Ubuntu-24.04`, `~/DMF_Orchestrator`. Docker, k3s, Terraform, Helm and Ansible run here.
+- DMF Toolkit: distro `Ubuntu`, `~/DMF_Toolkit`, at `/mnt/wsl/instances/Ubuntu/home/$USER/DMF_Toolkit` only while that distro has bind-mounted itself there, which isn't automatic. If it's missing, ask the user to run this in `Ubuntu`: `sudo mkdir -p /mnt/wsl/instances/Ubuntu && sudo mount --bind / /mnt/wsl/instances/Ubuntu`. It has its own `CLAUDE.md`. Treat it as read-only from this repo.
 - Node exists only in `Ubuntu`. The toolkit server listens on `localhost:3001` from both distros when it's running.
 - `/tmp` doesn't survive a host restart. Keep nothing there you'll need later.
 

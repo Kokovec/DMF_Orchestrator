@@ -1,6 +1,6 @@
 # Stage 6: remaining settings
 
-Run in Claude Code in distro `Ubuntu-24.04`, working directory `/home/dansi/switchframe-dmf`. Requires stage 5. Needs the facility running.
+Run in Claude Code in distro `Ubuntu-24.04`, working directory `~/switchframe-dmf`. Requires stage 5. Needs the facility running.
 
 ---
 

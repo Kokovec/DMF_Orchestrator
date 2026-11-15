@@ -1,6 +1,6 @@
 # Stage 7: option gating and end to end
 
-Run in two parts. Part A in distro `Ubuntu`, working directory `/home/dansi/DMF_Toolkit`. Part B in distro `Ubuntu-24.04`, working directory `/home/dansi/switchframe-dmf`. Requires stage 6. Paste only the part you're running.
+Run in two parts. Part A in distro `Ubuntu`, working directory `~/DMF_Toolkit`. Part B in distro `Ubuntu-24.04`, working directory `~/switchframe-dmf`. Requires stage 6. Paste only the part you're running.
 
 ---
 
@@ -8,7 +8,7 @@ Run in two parts. Part A in distro `Ubuntu`, working directory `/home/dansi/DMF_
 
 You're working on DMF Toolkit, a configurator for EBU Dynamic Media Facility workloads. The orchestrator now refuses options the facility can't honour. This stage shows that in the design tool, so users don't design what can't deploy.
 
-Read first: `CLAUDE.md`, `docs/design-rules.md`, and section 8 of `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/docs/orchestration/03-toolkit-spec.md`. That repo is read-only here. The exported file is at `/mnt/wsl/instances/Ubuntu-24.04/home/dansi/switchframe-dmf/.state/facility-local.json`. If it's missing, ask me to run `make facility-export` there. If that whole path is missing, ask me to expose it by running this in `Ubuntu-24.04`: `sudo mkdir -p /mnt/wsl/instances/Ubuntu-24.04 && sudo mount --bind / /mnt/wsl/instances/Ubuntu-24.04`.
+Read first: `CLAUDE.md`, `docs/design-rules.md`, and section 8 of `/mnt/wsl/instances/Ubuntu-24.04/home/$USER/switchframe-dmf/docs/orchestration/03-toolkit-spec.md`. That repo is read-only here. The exported file is at `/mnt/wsl/instances/Ubuntu-24.04/home/$USER/switchframe-dmf/.state/facility-local.json`. If it's missing, ask me to run `make facility-export` there. If that whole path is missing, ask me to expose it by running this in `Ubuntu-24.04`: `sudo mkdir -p /mnt/wsl/instances/Ubuntu-24.04 && sudo mount --bind / /mnt/wsl/instances/Ubuntu-24.04`.
 
 Node 24: `export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"`.
 

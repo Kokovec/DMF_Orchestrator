@@ -1,6 +1,6 @@
 # DMF Toolkit changes
 
-Repo: `/home/dansi/DMF_Toolkit`, distro `Ubuntu`. Its `docs/design-rules.md` is the single source for
+Repo: `~/DMF_Toolkit`, distro `Ubuntu`. Its `docs/design-rules.md` is the single source for
 its decisions: every change below updates the rule and adds a decision-log line in the same change.
 
 **Status:** all sections are built (sections 1–7 in stage 1, 2026-11-02; 9 in stage 2; 8 in stage 7A, with later product limits). Library is now `4.1.1`, `switchframe.1` still `1.1.0`. The versions below were the targets of stage 1.
@@ -64,7 +64,7 @@ The shared `output.mxl` default stays at its current value, so other modules don
 
 ## 3. Flows of unread outputs (changes R6.6)
 
-`flowsOf` skips outputs nobody reads ([workload.ts:560](/mnt/wsl/instances/Ubuntu/home/dansi/DMF_Toolkit/src/model/workload.ts)), but the writer still needs a flow
+`flowsOf` skips outputs nobody reads ([workload.ts:560](/mnt/wsl/instances/Ubuntu/home/$USER/DMF_Toolkit/src/model/workload.ts)), but the writer still needs a flow
 definition. New rule: the video and audio flows of every MXL output in use are always published;
 a data flow only when read. `readers` may be empty.
 
