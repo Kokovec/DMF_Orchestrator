@@ -391,6 +391,8 @@ Problems you can hit on the way:
 
 The facility console is a web page on this machine that shows the state of the facility and runs its lifecycle from buttons: start and stop, deploy or update a toolkit design, finalise a workload and redeploy one from the archive. Each button types the matching `make` command into a terminal shown on the page. The console does nothing you couldn't type yourself, and you see every command and its output.
 
+![The facility console: facility health, a workload on air, the archive, toolkit designs, a finished update and the terminal](docs/images/facility-console.png)
+
 ### Start it
 
 ```bash
