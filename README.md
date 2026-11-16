@@ -525,10 +525,6 @@ Three more patches fix timing defects found with the `sync` source (`mxl-syncsrc
 
 Pinned versions: SwitchFrame `792361540f14` ([Kokovec/switchframe](https://github.com/Kokovec/switchframe), a fork of mattlamb99/switchframe), MXL SDK `v1.1.0`, k3s `v1.36.5+k3s1`, cert-manager `v1.21.3`, kube-prometheus-stack `92.17.0`, Keycloak `26.8.1`, oauth2-proxy `v7.15.5`. Change them in `images/media-functions/Dockerfile`, `ansible/playbooks/group_vars/all.yml` and `terraform/stacks/platform/variables.tf`.
 
-## Related projects
-
-- [SRT_VAST](https://github.com/Kokovec/SRT_VAST): a proof of concept that receives a live SRT stream carrying SCTE-35 cues, requests ads from a VAST ad server when a break is signalled, and splices them into the outgoing MPEG-TS.
-
 ## Licence
 
 This package is released under the [MIT License](LICENSE). The images it builds download and compile third-party software that keeps its own licence, including [SwitchFrame](https://github.com/mattlamb99/switchframe) and [MXL](https://github.com/dmf-mxl/mxl). The scripts in `images/media-functions/patches/` modify that software at build time, and those changes apply under the licence of the code they modify.
